@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -44,6 +45,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.photoprism.uploader.domain.model.MediaImage
 import com.photoprism.uploader.ui.sync.SyncProgressDialog
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Screen B: Grid of images with multi-select and sync button.
@@ -169,17 +173,28 @@ fun AlbumGridScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
 
+                        val groupedImages = uiState.images.groupBy { formatDateHeader(it.dateAdded) }
+
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            items(uiState.images) { image ->
-                                ImageTile(
-                                    image = image,
-                                    isSelected = image.id in uiState.selectedImages,
-                                    isSynced = image.uploadKey in uiState.syncedImageKeys,
-                                    onClick = { viewModel.toggleSelection(image) }
-                                )
+                            groupedImages.forEach { (date, images) ->
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Text(
+                                        text = date,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                    )
+                                }
+                                items(images) { image ->
+                                    ImageTile(
+                                        image = image,
+                                        isSelected = image.id in uiState.selectedImages,
+                                        isSynced = image.uploadKey in uiState.syncedImageKeys,
+                                        onClick = { viewModel.toggleSelection(image) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -187,6 +202,11 @@ fun AlbumGridScreen(
             }
         }
     }
+}
+
+private fun formatDateHeader(timestampSeconds: Long): String {
+    val formatter = SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault())
+    return formatter.format(Date(timestampSeconds * 1000))
 }
 
 @Composable
