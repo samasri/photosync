@@ -108,6 +108,22 @@ class AlbumGridViewModel(
         }
     }
 
+    fun showUnmarkConfirmation(image: MediaImage) {
+        _uiState.value = _uiState.value.copy(imageToUnmark = image)
+    }
+
+    fun dismissUnmarkDialog() {
+        _uiState.value = _uiState.value.copy(imageToUnmark = null)
+    }
+
+    fun confirmUnmark() {
+        val image = _uiState.value.imageToUnmark ?: return
+        viewModelScope.launch {
+            uploadedItemsDao.deleteByKey(image.uploadKey)
+        }
+        _uiState.value = _uiState.value.copy(imageToUnmark = null)
+    }
+
     class Factory(
         private val imageRepository: MediaStoreImageRepository,
         private val syncOrchestrator: SyncOrchestrator,
@@ -128,7 +144,8 @@ data class AlbumGridUiState(
     val syncedImageKeys: Set<String> = emptySet(),
     val isLoading: Boolean = false,
     val error: String? = null,
-    val showSyncDialog: Boolean = false
+    val showSyncDialog: Boolean = false,
+    val imageToUnmark: MediaImage? = null
 )
 
 private fun parseWhatsAppDate(displayName: String): Long? {

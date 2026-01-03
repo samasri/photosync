@@ -1,8 +1,9 @@
 package com.photoprism.uploader.ui.grid
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.photoprism.uploader.domain.model.MediaImage
 import com.photoprism.uploader.ui.sync.SyncProgressDialog
+import com.photoprism.uploader.ui.sync.UnmarkSyncedDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -72,6 +74,14 @@ fun AlbumGridScreen(
         SyncProgressDialog(
             progress = syncProgress,
             onDismiss = { viewModel.dismissSyncDialog() }
+        )
+    }
+
+    uiState.imageToUnmark?.let { image ->
+        UnmarkSyncedDialog(
+            imageName = image.displayName,
+            onConfirm = { viewModel.confirmUnmark() },
+            onDismiss = { viewModel.dismissUnmarkDialog() }
         )
     }
 
@@ -191,11 +201,17 @@ fun AlbumGridScreen(
                                     )
                                 }
                                 items(images) { image ->
+                                    val isSynced = image.uploadKey in uiState.syncedImageKeys
                                     ImageTile(
                                         image = image,
                                         isSelected = image.id in uiState.selectedImages,
-                                        isSynced = image.uploadKey in uiState.syncedImageKeys,
-                                        onClick = { viewModel.toggleSelection(image) }
+                                        isSynced = isSynced,
+                                        onClick = { viewModel.toggleSelection(image) },
+                                        onLongClick = {
+                                            if (isSynced) {
+                                                viewModel.showUnmarkConfirmation(image)
+                                            }
+                                        }
                                     )
                                 }
                             }
@@ -231,18 +247,23 @@ private fun getImageDate(image: MediaImage, albumName: String): Long {
     return image.dateAdded
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ImageTile(
     image: MediaImage,
     isSelected: Boolean,
     isSynced: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .padding(1.dp)
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         AsyncImage(
             model = image.contentUri,
