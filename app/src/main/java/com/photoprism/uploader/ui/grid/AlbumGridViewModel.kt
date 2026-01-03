@@ -3,6 +3,7 @@ package com.photoprism.uploader.ui.grid
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.photoprism.uploader.data.local.db.UploadedItemsDao
 import com.photoprism.uploader.data.local.settings.SettingsDataStore
 import com.photoprism.uploader.data.mediastore.MediaStoreImageRepository
 import com.photoprism.uploader.domain.model.MediaImage
@@ -23,7 +24,8 @@ import kotlinx.coroutines.launch
 class AlbumGridViewModel(
     private val imageRepository: MediaStoreImageRepository,
     private val syncOrchestrator: SyncOrchestrator,
-    private val settingsDataStore: SettingsDataStore
+    private val settingsDataStore: SettingsDataStore,
+    private val uploadedItemsDao: UploadedItemsDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AlbumGridUiState())
@@ -31,6 +33,14 @@ class AlbumGridViewModel(
 
     val syncProgress: StateFlow<SyncProgress> = syncOrchestrator.progress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SyncProgress())
+
+    init {
+        viewModelScope.launch {
+            uploadedItemsDao.getUploadedKeysFlow().collect { keys ->
+                _uiState.value = _uiState.value.copy(syncedImageKeys = keys.toSet())
+            }
+        }
+    }
 
     fun loadImages(bucketId: String, albumName: String) {
         viewModelScope.launch {
@@ -100,11 +110,12 @@ class AlbumGridViewModel(
     class Factory(
         private val imageRepository: MediaStoreImageRepository,
         private val syncOrchestrator: SyncOrchestrator,
-        private val settingsDataStore: SettingsDataStore
+        private val settingsDataStore: SettingsDataStore,
+        private val uploadedItemsDao: UploadedItemsDao
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return AlbumGridViewModel(imageRepository, syncOrchestrator, settingsDataStore) as T
+            return AlbumGridViewModel(imageRepository, syncOrchestrator, settingsDataStore, uploadedItemsDao) as T
         }
     }
 }
@@ -113,6 +124,7 @@ data class AlbumGridUiState(
     val albumName: String = "",
     val images: List<MediaImage> = emptyList(),
     val selectedImages: Set<Long> = emptySet(),
+    val syncedImageKeys: Set<String> = emptySet(),
     val isLoading: Boolean = false,
     val error: String? = null,
     val showSyncDialog: Boolean = false

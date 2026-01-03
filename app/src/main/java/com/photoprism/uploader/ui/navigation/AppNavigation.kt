@@ -60,7 +60,8 @@ fun AppNavigation(appModule: AppModule) {
                 factory = AlbumGridViewModel.Factory(
                     appModule.imageRepository,
                     appModule.syncOrchestrator,
-                    appModule.settingsDataStore
+                    appModule.settingsDataStore,
+                    appModule.uploadedItemsDao
                 )
             )
             AlbumGridScreen(

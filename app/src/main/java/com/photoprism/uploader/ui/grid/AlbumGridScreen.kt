@@ -177,6 +177,7 @@ fun AlbumGridScreen(
                                 ImageTile(
                                     image = image,
                                     isSelected = image.id in uiState.selectedImages,
+                                    isSynced = image.uploadKey in uiState.syncedImageKeys,
                                     onClick = { viewModel.toggleSelection(image) }
                                 )
                             }
@@ -192,6 +193,7 @@ fun AlbumGridScreen(
 private fun ImageTile(
     image: MediaImage,
     isSelected: Boolean,
+    isSynced: Boolean,
     onClick: () -> Unit
 ) {
     Box(
@@ -229,6 +231,25 @@ private fun ImageTile(
                     contentDescription = "Selected",
                     tint = Color.White,
                     modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+
+        if (isSynced) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(4.dp)
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF4CAF50)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = "Synced",
+                    tint = Color.White,
+                    modifier = Modifier.size(14.dp)
                 )
             }
         }
