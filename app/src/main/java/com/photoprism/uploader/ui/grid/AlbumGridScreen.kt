@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
@@ -38,6 +39,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -68,7 +70,7 @@ fun AlbumGridScreen(
     val syncProgress by viewModel.syncProgress.collectAsState()
 
     LaunchedEffect(bucketId) {
-        viewModel.loadImages(bucketId, albumName)
+        viewModel.loadImagesIfNeeded(bucketId, albumName)
     }
 
     if (uiState.showSyncDialog) {
@@ -189,8 +191,13 @@ fun AlbumGridScreen(
                             uiState.images.groupBy { formatDateHeader(getImageDate(it, uiState.albumName)) }
                         }
 
+                        val gridState = rememberSaveable(saver = LazyGridState.Saver) {
+                            LazyGridState()
+                        }
+
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
+                            state = gridState,
                             modifier = Modifier.fillMaxSize()
                         ) {
                             groupedImages.forEach { (date, images) ->

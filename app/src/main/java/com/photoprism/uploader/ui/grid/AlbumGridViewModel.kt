@@ -42,7 +42,10 @@ class AlbumGridViewModel(
         }
     }
 
-    fun loadImages(bucketId: String, albumName: String) {
+    fun loadImagesIfNeeded(bucketId: String, albumName: String) {
+        if (_uiState.value.images.isNotEmpty() && _uiState.value.albumName == albumName) {
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
