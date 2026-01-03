@@ -36,6 +36,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -173,7 +174,9 @@ fun AlbumGridScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
 
-                        val groupedImages = uiState.images.groupBy { formatDateHeader(it.dateAdded) }
+                        val groupedImages = remember(uiState.images, uiState.albumName) {
+                            uiState.images.groupBy { formatDateHeader(getImageDate(it, uiState.albumName)) }
+                        }
 
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
@@ -207,6 +210,25 @@ fun AlbumGridScreen(
 private fun formatDateHeader(timestampSeconds: Long): String {
     val formatter = SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault())
     return formatter.format(Date(timestampSeconds * 1000))
+}
+
+private fun parseWhatsAppDate(displayName: String): Long? {
+    // Pattern: IMG-YYYYMMDD-WA####.jpg
+    val regex = Regex("""IMG-(\d{4})(\d{2})(\d{2})-WA\d+\.\w+""")
+    val match = regex.matchEntire(displayName) ?: return null
+
+    val (year, month, day) = match.destructured
+    val calendar = java.util.Calendar.getInstance().apply {
+        set(year.toInt(), month.toInt() - 1, day.toInt(), 0, 0, 0)
+    }
+    return calendar.timeInMillis / 1000
+}
+
+private fun getImageDate(image: MediaImage, albumName: String): Long {
+    if (albumName.equals("WhatsApp Images", ignoreCase = true)) {
+        parseWhatsAppDate(image.displayName)?.let { return it }
+    }
+    return image.dateAdded
 }
 
 @Composable

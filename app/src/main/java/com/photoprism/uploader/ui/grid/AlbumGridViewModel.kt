@@ -51,8 +51,9 @@ class AlbumGridViewModel(
             )
             try {
                 val images = imageRepository.loadImagesForAlbum(bucketId)
+                val sortedImages = images.sortedByDescending { getImageDate(it, albumName) }
                 _uiState.value = _uiState.value.copy(
-                    images = images,
+                    images = sortedImages,
                     isLoading = false
                 )
             } catch (e: Exception) {
@@ -129,3 +130,22 @@ data class AlbumGridUiState(
     val error: String? = null,
     val showSyncDialog: Boolean = false
 )
+
+private fun parseWhatsAppDate(displayName: String): Long? {
+    // Pattern: IMG-YYYYMMDD-WA####.jpg
+    val regex = Regex("""IMG-(\d{4})(\d{2})(\d{2})-WA\d+\.\w+""")
+    val match = regex.matchEntire(displayName) ?: return null
+
+    val (year, month, day) = match.destructured
+    val calendar = java.util.Calendar.getInstance().apply {
+        set(year.toInt(), month.toInt() - 1, day.toInt(), 0, 0, 0)
+    }
+    return calendar.timeInMillis / 1000
+}
+
+private fun getImageDate(image: MediaImage, albumName: String): Long {
+    if (albumName.equals("WhatsApp Images", ignoreCase = true)) {
+        parseWhatsAppDate(image.displayName)?.let { return it }
+    }
+    return image.dateAdded
+}
