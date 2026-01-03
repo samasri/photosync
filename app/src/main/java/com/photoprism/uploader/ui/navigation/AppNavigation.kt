@@ -14,6 +14,7 @@ import com.photoprism.uploader.ui.grid.AlbumGridScreen
 import com.photoprism.uploader.ui.grid.AlbumGridViewModel
 import com.photoprism.uploader.ui.settings.SettingsScreen
 import com.photoprism.uploader.ui.settings.SettingsViewModel
+import com.photoprism.uploader.ui.viewer.ImageViewerScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
 
@@ -68,6 +69,26 @@ fun AppNavigation(appModule: AppModule) {
                 bucketId = bucketId,
                 albumName = albumName,
                 viewModel = viewModel,
+                onBack = { navController.popBackStack() },
+                onImageClick = { image ->
+                    val encodedUri = URLEncoder.encode(image.contentUri.toString(), "UTF-8")
+                    navController.navigate("${Routes.ImageViewerBase}/$encodedUri")
+                }
+            )
+        }
+
+        composable(
+            route = "${Routes.ImageViewerBase}/{contentUri}",
+            arguments = listOf(
+                navArgument("contentUri") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val contentUri = URLDecoder.decode(
+                backStackEntry.arguments?.getString("contentUri") ?: "",
+                "UTF-8"
+            )
+            ImageViewerScreen(
+                contentUri = contentUri,
                 onBack = { navController.popBackStack() }
             )
         }
@@ -87,5 +108,6 @@ fun AppNavigation(appModule: AppModule) {
 object Routes {
     const val Albums = "albums"
     const val AlbumGridBase = "album_grid"
+    const val ImageViewerBase = "image_viewer"
     const val Settings = "settings"
 }

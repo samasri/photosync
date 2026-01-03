@@ -61,7 +61,8 @@ fun AlbumGridScreen(
     bucketId: String,
     albumName: String,
     viewModel: AlbumGridViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onImageClick: (MediaImage) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val syncProgress by viewModel.syncProgress.collectAsState()
@@ -207,6 +208,7 @@ fun AlbumGridScreen(
                                         isSelected = image.id in uiState.selectedImages,
                                         isSynced = isSynced,
                                         onClick = { viewModel.toggleSelection(image) },
+                                        onDoubleClick = { onImageClick(image) },
                                         onLongClick = {
                                             if (isSynced) {
                                                 viewModel.showUnmarkConfirmation(image)
@@ -254,6 +256,7 @@ private fun ImageTile(
     isSelected: Boolean,
     isSynced: Boolean,
     onClick: () -> Unit,
+    onDoubleClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
     Box(
@@ -262,6 +265,7 @@ private fun ImageTile(
             .padding(1.dp)
             .combinedClickable(
                 onClick = onClick,
+                onDoubleClick = onDoubleClick,
                 onLongClick = onLongClick
             )
     ) {
