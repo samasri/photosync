@@ -72,23 +72,30 @@ fun AppNavigation(appModule: AppModule) {
                 onBack = { navController.popBackStack() },
                 onImageClick = { image ->
                     val encodedUri = URLEncoder.encode(image.contentUri.toString(), "UTF-8")
-                    navController.navigate("${Routes.ImageViewerBase}/$encodedUri")
+                    val encodedName = URLEncoder.encode(image.displayName, "UTF-8")
+                    navController.navigate("${Routes.ImageViewerBase}/$encodedUri/$encodedName")
                 }
             )
         }
 
         composable(
-            route = "${Routes.ImageViewerBase}/{contentUri}",
+            route = "${Routes.ImageViewerBase}/{contentUri}/{imageName}",
             arguments = listOf(
-                navArgument("contentUri") { type = NavType.StringType }
+                navArgument("contentUri") { type = NavType.StringType },
+                navArgument("imageName") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val contentUri = URLDecoder.decode(
                 backStackEntry.arguments?.getString("contentUri") ?: "",
                 "UTF-8"
             )
+            val imageName = URLDecoder.decode(
+                backStackEntry.arguments?.getString("imageName") ?: "",
+                "UTF-8"
+            )
             ImageViewerScreen(
                 contentUri = contentUri,
+                imageName = imageName,
                 onBack = { navController.popBackStack() }
             )
         }

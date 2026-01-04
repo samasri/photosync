@@ -1,4 +1,4 @@
-# PhotoPrism WebDAV Uploader
+# PhotoSync
 
 ## Overview
 
