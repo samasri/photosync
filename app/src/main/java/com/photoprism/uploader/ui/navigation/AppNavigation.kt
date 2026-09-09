@@ -41,7 +41,8 @@ fun AppNavigation(appModule: AppModule) {
                 },
                 onSettingsClick = {
                     navController.navigate(Routes.Settings)
-                }
+                },
+                onReviewClick = { navController.navigate("review") }
             )
         }
 
@@ -100,9 +101,18 @@ fun AppNavigation(appModule: AppModule) {
             )
         }
 
+        composable("review") {
+            val model: com.photoprism.uploader.ui.review.ReviewViewModel = viewModel(
+                factory = com.photoprism.uploader.ui.review.ReviewViewModel.Factory(appModule)
+            )
+            com.photoprism.uploader.ui.review.ReviewScreen(model,
+                onBack = { navController.popBackStack() },
+                onSettings = { navController.navigate(Routes.Settings) })
+        }
+
         composable(Routes.Settings) {
             val viewModel: SettingsViewModel = viewModel(
-                factory = SettingsViewModel.Factory(appModule.settingsDataStore)
+                factory = SettingsViewModel.Factory(appModule)
             )
             SettingsScreen(
                 viewModel = viewModel,

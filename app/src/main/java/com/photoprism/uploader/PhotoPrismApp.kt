@@ -14,5 +14,6 @@ class PhotoPrismApp : Application() {
     override fun onCreate() {
         super.onCreate()
         appModule = AppModule(this)
+        appModule.uploadScheduler.ensureHourlyRetry()
     }
 }

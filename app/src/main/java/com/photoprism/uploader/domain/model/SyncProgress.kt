@@ -8,10 +8,11 @@ data class SyncProgress(
     val uploaded: Int = 0,
     val skipped: Int = 0,
     val failed: Int = 0,
+    val queued: Int = 0,
     val currentFileName: String? = null,
     val lastError: String? = null,
     val isRunning: Boolean = false,
     val isComplete: Boolean = false
 ) {
-    val processed: Int get() = uploaded + skipped + failed
+    val processed: Int get() = uploaded + skipped + failed + queued
 }

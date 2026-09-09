@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "PhotoPrismUploader"
 include(":app")
+include(":duplicate-study")

@@ -11,7 +11,7 @@ data class ServerSettings(
     companion object {
         val DEFAULT = ServerSettings(
             baseUrl = "https://photoprism.example.com/import/",
-            username = "",
+            username = "admin",
             password = ""
         )
     }

@@ -52,7 +52,8 @@ import com.photoprism.uploader.domain.model.Album
 fun AlbumsScreen(
     viewModel: AlbumsViewModel,
     onAlbumClick: (Album) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onReviewClick: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -88,6 +89,9 @@ fun AlbumsScreen(
             TopAppBar(
                 title = { Text("Albums") },
                 actions = {
+                    androidx.compose.material3.TextButton(onClick = onReviewClick, enabled = hasPermission) {
+                        Text("Photo swipe")
+                    }
                     IconButton(onClick = onSettingsClick) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }

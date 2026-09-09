@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.photoprism.uploader.data.local.settings.SettingsDataStore
 import com.photoprism.uploader.domain.model.ServerSettings
+import kotlinx.coroutines.flow.stateIn
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,8 +16,14 @@ import kotlinx.coroutines.launch
  * ViewModel for the Settings screen.
  */
 class SettingsViewModel(
-    private val settingsDataStore: SettingsDataStore
+    private val app: com.photoprism.uploader.di.AppModule
 ) : ViewModel() {
+    private val settingsDataStore = app.settingsDataStore
+    val pending = app.uploadQueue.pending.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+    val reviewProgress = app.reviewStore.progress.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), com.photoprism.uploader.ui.review.ReviewProgress())
+    val uploading = app.uploadQueue.running
+
+    fun retryUploads() { app.uploadScheduler.uploadSoon() }
 
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -51,14 +59,19 @@ class SettingsViewModel(
     fun saveSettings() {
         viewModelScope.launch {
             val state = _uiState.value
+            val url = state.baseUrl.trim()
+            if (url.toHttpUrlOrNull() == null) {
+                _uiState.value = state.copy(error = "Enter a valid http:// or https:// server URL.")
+                return@launch
+            }
             settingsDataStore.saveSettings(
                 ServerSettings(
-                    baseUrl = state.baseUrl,
+                    baseUrl = url,
                     username = state.username,
                     password = state.password
                 )
             )
-            _uiState.value = _uiState.value.copy(saveSuccess = true)
+            _uiState.value = _uiState.value.copy(saveSuccess = true, error = null)
         }
     }
 
@@ -67,11 +80,11 @@ class SettingsViewModel(
     }
 
     class Factory(
-        private val settingsDataStore: SettingsDataStore
+        private val app: com.photoprism.uploader.di.AppModule
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return SettingsViewModel(settingsDataStore) as T
+            return SettingsViewModel(app) as T
         }
     }
 }
@@ -80,5 +93,6 @@ data class SettingsUiState(
     val baseUrl: String = ServerSettings.DEFAULT.baseUrl,
     val username: String = ServerSettings.DEFAULT.username,
     val password: String = ServerSettings.DEFAULT.password,
-    val saveSuccess: Boolean = false
+    val saveSuccess: Boolean = false,
+    val error: String? = null
 )

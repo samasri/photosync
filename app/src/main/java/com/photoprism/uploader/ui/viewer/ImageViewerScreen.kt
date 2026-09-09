@@ -28,15 +28,15 @@ fun ImageViewerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .clickable { onBack() },
+,
         contentAlignment = Alignment.Center
     ) {
-        AsyncImage(
-            model = contentUri,
-            contentDescription = imageName,
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
-        )
+        com.photoprism.uploader.ui.components.ZoomablePhoto(
+            contentUri, imageName, Modifier.fillMaxSize())
+        androidx.compose.material3.TextButton(onClick = onBack,
+            modifier = Modifier.align(Alignment.TopStart).padding(top = 40.dp)) {
+            Text("Back", color = Color.White)
+        }
 
         Text(
             text = imageName,

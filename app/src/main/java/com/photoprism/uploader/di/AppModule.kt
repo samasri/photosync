@@ -13,7 +13,20 @@ import com.photoprism.uploader.domain.sync.SyncOrchestrator
 /**
  * Manual dependency injection container.
  */
-class AppModule(private val context: Context) {
+class AppModule(private val context: Context, private val scheduleUploads: Boolean = true) {
+    val reviewStore by lazy { com.photoprism.uploader.ui.review.ReviewStore(context) }
+    val uploadScheduler by lazy { com.photoprism.uploader.work.UploadScheduler(context) }
+    private val queueDatabase by lazy {
+        androidx.room.Room.databaseBuilder(context.applicationContext,
+            com.photoprism.uploader.data.queue.UploadQueueDatabase::class.java, "upload_queue.db").build()
+    }
+    val pendingUploadsDao by lazy { queueDatabase.pendingUploads() }
+    val uploadQueue by lazy {
+        com.photoprism.uploader.data.queue.UploadQueue(context, pendingUploadsDao, uploadedItemsDao,
+            settingsDataStore, webDavUploader, fileNameResolver) {
+            if (scheduleUploads) uploadScheduler.uploadSoon()
+        }
+    }
 
     // Database
     private val database: AppDatabase by lazy {
@@ -49,6 +62,6 @@ class AppModule(private val context: Context) {
 
     // Sync orchestrator
     val syncOrchestrator: SyncOrchestrator by lazy {
-        SyncOrchestrator(webDavUploader, uploadedItemsDao, fileNameResolver)
+        SyncOrchestrator(uploadQueue, uploadedItemsDao)
     }
 }

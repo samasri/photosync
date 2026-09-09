@@ -97,18 +97,17 @@ class AlbumGridViewModel(
             _uiState.value = _uiState.value.copy(showSyncDialog = true)
             syncOrchestrator.reset()
 
-            val settings = settingsDataStore.settings.first()
-            syncOrchestrator.syncImages(selectedImages, settings)
+            syncOrchestrator.syncImages(selectedImages)
         }
     }
 
     fun dismissSyncDialog() {
         _uiState.value = _uiState.value.copy(showSyncDialog = false)
-        syncOrchestrator.reset()
         // Clear selection after successful sync
         if (syncProgress.value.isComplete) {
             clearSelection()
         }
+        syncOrchestrator.reset()
     }
 
     fun showUnmarkConfirmation(image: MediaImage) {

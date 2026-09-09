@@ -31,7 +31,7 @@ fun SyncProgressDialog(
         },
         title = {
             Text(
-                text = if (progress.isComplete) "Sync Complete" else "Syncing..."
+                text = if (progress.isComplete) "Photos saved for upload" else "Saving photos..."
             )
         },
         text = {
@@ -60,12 +60,15 @@ fun SyncProgressDialog(
                     Column {
                         Text(text = "Total: ${progress.total}")
                         Text(text = "Uploaded: ${progress.uploaded}")
+                        Text(text = "Queued: ${progress.queued}")
                     }
                     Column {
                         Text(text = "Skipped: ${progress.skipped}")
                         Text(text = "Failed: ${progress.failed}")
                     }
                 }
+
+                Text("Pending uploads and retry status are available in Settings.")
 
                 progress.lastError?.let { error ->
                     Spacer(modifier = Modifier.height(12.dp))
