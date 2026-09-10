@@ -1,9 +1,19 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
 }
+
+val dotenv = Properties().apply {
+    val file = rootProject.file(".env")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun env(key: String, fallback: String): String =
+    dotenv.getProperty(key) ?: System.getenv(key) ?: fallback
 
 android {
     namespace = "com.photoprism.uploader"
@@ -17,6 +27,17 @@ android {
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField(
+            "String",
+            "DEFAULT_SERVER_URL",
+            "\"${env("PHOTOSYNC_SERVER_URL", "https://photoprism.example.com/import/")}\""
+        )
+        buildConfigField(
+            "String",
+            "DEFAULT_USERNAME",
+            "\"${env("PHOTOSYNC_USERNAME", "admin")}\""
+        )
     }
 
     buildTypes {
@@ -47,6 +68,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

@@ -21,3 +21,6 @@ local.properties
 
 # Local device verification artifacts
 test-artifacts/
+
+# Local environment configuration
+.env

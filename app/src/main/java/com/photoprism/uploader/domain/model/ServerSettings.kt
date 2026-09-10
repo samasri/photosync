@@ -1,5 +1,7 @@
 package com.photoprism.uploader.domain.model
 
+import com.photoprism.uploader.BuildConfig
+
 /**
  * WebDAV server connection settings.
  */
@@ -10,8 +12,8 @@ data class ServerSettings(
 ) {
     companion object {
         val DEFAULT = ServerSettings(
-            baseUrl = "https://photoprism.example.com/import/",
-            username = "admin",
+            baseUrl = BuildConfig.DEFAULT_SERVER_URL,
+            username = BuildConfig.DEFAULT_USERNAME,
             password = ""
         )
     }
