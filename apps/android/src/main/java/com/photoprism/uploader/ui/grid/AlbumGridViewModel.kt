@@ -50,6 +50,7 @@ class AlbumGridViewModel(
     private var loadingBucket: String? = null
     private var allImages: List<MediaImage> = emptyList()
     private var allGroups: List<ImageDateGroup> = emptyList()
+    private var datePositions: List<PhotoDatePosition> = emptyList()
     private var visibleCount = 0
     private val pageSize = 90
 
@@ -72,6 +73,14 @@ class AlbumGridViewModel(
                 }
                 allImages = sorted
                 allGroups = groups
+                datePositions = withContext(Dispatchers.Default) {
+                    val month = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+                    var photoIndex = 0
+                    groups.mapIndexed { groupIndex, group ->
+                        PhotoDatePosition(photoIndex + groupIndex, photoIndex, month.format(Date(group.timestamp * 1000)))
+                            .also { photoIndex += group.images.size }
+                    }
+                }
                 loadedBucket = bucketId
                 visibleCount = if (bucketId == "__whatsapp") minOf(pageSize, sorted.size) else sorted.size
                 publishImages()
@@ -91,6 +100,17 @@ class AlbumGridViewModel(
         publishImages()
     }
 
+    /** Reveal metadata through the target without decoding intervening thumbnails. */
+    fun revealScrollTarget(fraction: Float): Int {
+        if (allImages.isEmpty()) return 0
+        val index = (fraction.coerceIn(0f, 1f) * (allImages.size + allGroups.size - 1)).toInt()
+        val position = datePositions.last { it.gridIndex <= index }
+        val photoIndex = position.photoIndex + (index - position.gridIndex - 1).coerceAtLeast(0)
+        visibleCount = maxOf(visibleCount, minOf(photoIndex + pageSize, allImages.size))
+        publishImages()
+        return index
+    }
+
     private fun publishImages() {
         var remaining = visibleCount
         val groups = allGroups.mapNotNull { group ->
@@ -102,7 +122,8 @@ class AlbumGridViewModel(
         }
         _uiState.value = _uiState.value.copy(
             images = allImages.take(visibleCount), groups = groups, totalImages = allImages.size,
-            hasMore = visibleCount < allImages.size, isLoading = false
+            hasMore = visibleCount < allImages.size, isLoading = false,
+            datePositions = datePositions, totalGridItems = allImages.size + allGroups.size
         )
     }
 
@@ -177,6 +198,8 @@ class AlbumGridViewModel(
     }
 }
 
+data class PhotoDatePosition(val gridIndex: Int, val photoIndex: Int, val month: String)
+
 data class ImageDateGroup(val label: String, val timestamp: Long, val images: List<MediaImage>)
 
 data class AlbumGridUiState(
@@ -184,6 +207,8 @@ data class AlbumGridUiState(
     val images: List<MediaImage> = emptyList(),
     val groups: List<ImageDateGroup> = emptyList(),
     val totalImages: Int = 0,
+    val totalGridItems: Int = 0,
+    val datePositions: List<PhotoDatePosition> = emptyList(),
     val hasMore: Boolean = false,
     val selectedImages: Set<Long> = emptySet(),
     val syncedImageKeys: Set<String> = emptySet(),

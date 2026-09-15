@@ -34,6 +34,8 @@ under the [Unsplash License](https://unsplash.com/license).
 
 Tap photos to select them, then choose **Sync now**. Green checkmarks show upload
 history; selected photos have a separate highlight. Double-tap to view and zoom.
+Photos load progressively as you scroll. In larger libraries, drag the right-edge
+scrollbar to jump through photos by month and year.
 
 **Photo swipe** lets you review pictures individually: swipe right to queue an
 upload, left to ignore without deleting, and undo your last ignore. Progress persists.

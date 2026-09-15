@@ -203,34 +203,43 @@ fun AlbumGridScreen(
                             }
                         }
 
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(3),
-                            state = gridState,
-                            modifier = Modifier.fillMaxSize().testTag("photo-grid")
-                        ) {
-                            uiState.groups.forEach { group ->
-                                item(key = "date:${group.label}", contentType = "date", span = { GridItemSpan(maxLineSpan) }) {
-                                    Text(
-                                        text = group.label,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                                    )
-                                }
-                                items(group.images, key = { it.id }, contentType = { "photo" }) { image ->
-                                    val isSynced = image.uploadKey in uiState.syncedImageKeys
-                                    ImageTile(
-                                        image = image,
-                                        isSelected = image.id in uiState.selectedImages,
-                                        isSynced = !browseOnly && isSynced,
-                                        onClick = { if (browseOnly) onImageClick(image) else viewModel.toggleSelection(image) },
-                                        onDoubleClick = { onImageClick(image) },
-                                        onLongClick = {
-                                            if (!browseOnly && isSynced) {
-                                                viewModel.showUnmarkConfirmation(image)
+                        Box(Modifier.fillMaxSize()) {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(3),
+                                state = gridState,
+                                modifier = Modifier.fillMaxSize()
+                                    .padding(end = if (bucketId == "__whatsapp" && uiState.totalImages > 90) 48.dp else 0.dp)
+                                    .testTag("photo-grid")
+                            ) {
+                                uiState.groups.forEach { group ->
+                                    item(key = "date:${group.label}", contentType = "date", span = { GridItemSpan(maxLineSpan) }) {
+                                        Text(
+                                            text = group.label,
+                                            style = MaterialTheme.typography.titleMedium,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                        )
+                                    }
+                                    items(group.images, key = { it.id }, contentType = { "photo" }) { image ->
+                                        val isSynced = image.uploadKey in uiState.syncedImageKeys
+                                        ImageTile(
+                                            image = image,
+                                            isSelected = image.id in uiState.selectedImages,
+                                            isSynced = !browseOnly && isSynced,
+                                            onClick = { if (browseOnly) onImageClick(image) else viewModel.toggleSelection(image) },
+                                            onDoubleClick = { onImageClick(image) },
+                                            onLongClick = {
+                                                if (!browseOnly && isSynced) {
+                                                    viewModel.showUnmarkConfirmation(image)
+                                                }
                                             }
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
+                            }
+                            if (bucketId == "__whatsapp" && uiState.totalImages > 90) {
+                                PhotoDateScrubber(gridState, uiState.datePositions, uiState.totalGridItems,
+                                    onSeek = viewModel::revealScrollTarget,
+                                    modifier = Modifier.align(Alignment.CenterEnd))
                             }
                         }
                     }

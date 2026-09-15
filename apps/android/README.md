@@ -32,7 +32,10 @@ The WhatsApp tab queries matching MediaStore buckets directly. It reads lightwei
 metadata once, then parses dates, sorts and groups on a background dispatcher. The
 grid exposes 90 photos at a time and prefetches the next batch near the end; Coil
 loads thumbnails only for composed tiles. Selection and uploads use the full metadata
-index, so **Select All** includes photos beyond the visible batches.
+index, so **Select All** includes photos beyond the visible batches. The date scrubber
+maps the full index to grid positions (including day headers), exposes metadata
+through the target, then waits for layout before scrolling. It never decodes all
+the photos between the old and new positions.
 
 ## Updates and tests
 
