@@ -15,7 +15,7 @@ class MergedNavigationTest {
         compose.onNodeWithText("WhatsApp Images").assertIsDisplayed()
         compose.onNodeWithText("Photo swipe").assertIsDisplayed()
         compose.onNodeWithText("Select All").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("WhatsApp backup").assertIsDisplayed()
         compose.onNodeWithText("Camera backup").performClick()
         compose.onNodeWithText("Automatic upload").assertIsDisplayed()
@@ -26,7 +26,6 @@ class MergedNavigationTest {
         compose.onNodeWithText("WhatsApp backup").performClick()
         compose.onNodeWithText("Base URL").assertIsDisplayed()
         compose.onNodeWithText("Automatic upload").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Albums").performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithText("Camera").fetchSemanticsNodes().size == 2 }

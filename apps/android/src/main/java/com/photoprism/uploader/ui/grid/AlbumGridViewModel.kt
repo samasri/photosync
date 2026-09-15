@@ -7,16 +7,20 @@ import com.photoprism.uploader.data.local.db.UploadedItemsDao
 import com.photoprism.uploader.data.local.settings.SettingsDataStore
 import com.photoprism.uploader.data.mediastore.MediaStoreImageRepository
 import com.photoprism.uploader.domain.model.MediaImage
-import com.photoprism.uploader.domain.model.ServerSettings
 import com.photoprism.uploader.domain.model.SyncProgress
 import com.photoprism.uploader.domain.sync.SyncOrchestrator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * ViewModel for the Album Grid screen.
@@ -42,30 +46,64 @@ class AlbumGridViewModel(
         }
     }
 
+    private var loadedBucket: String? = null
+    private var loadingBucket: String? = null
+    private var allImages: List<MediaImage> = emptyList()
+    private var allGroups: List<ImageDateGroup> = emptyList()
+    private var visibleCount = 0
+    private val pageSize = 90
+
     fun loadImagesIfNeeded(bucketId: String, albumName: String) {
-        if (_uiState.value.images.isNotEmpty() && _uiState.value.albumName == albumName) {
-            return
-        }
+        if (loadedBucket == bucketId || loadingBucket == bucketId) return
+        loadingBucket = bucketId
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                error = null,
-                albumName = albumName
-            )
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, albumName = albumName)
             try {
                 val images = imageRepository.loadImagesForAlbum(bucketId)
-                val sortedImages = images.sortedByDescending { getImageDate(it, albumName) }
-                _uiState.value = _uiState.value.copy(
-                    images = sortedImages,
-                    isLoading = false
-                )
+                // Metadata only: parse each date once, outside the UI thread. Coil decodes
+                // thumbnails only for composed tiles, including after a later date jump.
+                val (sorted, groups) = withContext(Dispatchers.Default) {
+                    val dated = images.map { it to getImageDate(it, albumName) }
+                        .sortedByDescending { it.second }
+                    val formatter = SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault())
+                    val grouped = dated.groupBy { formatter.format(Date(it.second * 1000)) }
+                        .map { (label, entries) -> ImageDateGroup(label, entries.first().second, entries.map { it.first }) }
+                    dated.map { it.first } to grouped
+                }
+                allImages = sorted
+                allGroups = groups
+                loadedBucket = bucketId
+                visibleCount = if (bucketId == "__whatsapp") minOf(pageSize, sorted.size) else sorted.size
+                publishImages()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = e.message ?: "Failed to load images"
-                )
+                _uiState.value = _uiState.value.copy(isLoading = false, error = "Unable to load photos. Check photo access and try again.")
+            } finally {
+                loadingBucket = null
             }
         }
+    }
+
+    fun loadMore() {
+        if (visibleCount >= allImages.size) return
+        visibleCount = minOf(visibleCount + pageSize, allImages.size)
+        publishImages()
+    }
+
+    private fun publishImages() {
+        var remaining = visibleCount
+        val groups = allGroups.mapNotNull { group ->
+            if (remaining <= 0) null else {
+                val visible = group.images.take(remaining)
+                remaining -= visible.size
+                group.copy(images = visible)
+            }
+        }
+        _uiState.value = _uiState.value.copy(
+            images = allImages.take(visibleCount), groups = groups, totalImages = allImages.size,
+            hasMore = visibleCount < allImages.size, isLoading = false
+        )
     }
 
     fun toggleSelection(image: MediaImage) {
@@ -79,7 +117,7 @@ class AlbumGridViewModel(
     }
 
     fun selectAll() {
-        val allIds = _uiState.value.images.map { it.id }.toSet()
+        val allIds = allImages.map { it.id }.toSet()
         _uiState.value = _uiState.value.copy(selectedImages = allIds)
     }
 
@@ -90,7 +128,7 @@ class AlbumGridViewModel(
     fun startSync() {
         viewModelScope.launch {
             val selectedIds = _uiState.value.selectedImages
-            val selectedImages = _uiState.value.images.filter { it.id in selectedIds }
+            val selectedImages = allImages.filter { it.id in selectedIds }
 
             if (selectedImages.isEmpty()) return@launch
 
@@ -139,9 +177,14 @@ class AlbumGridViewModel(
     }
 }
 
+data class ImageDateGroup(val label: String, val timestamp: Long, val images: List<MediaImage>)
+
 data class AlbumGridUiState(
     val albumName: String = "",
     val images: List<MediaImage> = emptyList(),
+    val groups: List<ImageDateGroup> = emptyList(),
+    val totalImages: Int = 0,
+    val hasMore: Boolean = false,
     val selectedImages: Set<Long> = emptySet(),
     val syncedImageKeys: Set<String> = emptySet(),
     val isLoading: Boolean = false,
@@ -150,13 +193,15 @@ data class AlbumGridUiState(
     val imageToUnmark: MediaImage? = null
 )
 
+private val whatsAppDatePattern = Regex("""IMG-(\d{4})(\d{2})(\d{2})-WA\d+\.\w+""")
+
 private fun parseWhatsAppDate(displayName: String): Long? {
     // Pattern: IMG-YYYYMMDD-WA####.jpg
-    val regex = Regex("""IMG-(\d{4})(\d{2})(\d{2})-WA\d+\.\w+""")
-    val match = regex.matchEntire(displayName) ?: return null
+    val match = whatsAppDatePattern.matchEntire(displayName) ?: return null
 
     val (year, month, day) = match.destructured
     val calendar = java.util.Calendar.getInstance().apply {
+        clear()
         set(year.toInt(), month.toInt() - 1, day.toInt(), 0, 0, 0)
     }
     return calendar.timeInMillis / 1000

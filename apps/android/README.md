@@ -26,6 +26,14 @@ Fingerprints cache MediaStore identity/version, size, dates and generation. The
 when byte interpretation changes. Credentials scope comparison status separately.
 See [Android media documentation](https://developer.android.com/training/data-storage/shared/media).
 
+## WhatsApp grid
+
+The WhatsApp tab queries matching MediaStore buckets directly. It reads lightweight
+metadata once, then parses dates, sorts and groups on a background dispatcher. The
+grid exposes 90 photos at a time and prefetches the next batch near the end; Coil
+loads thumbnails only for composed tiles. Selection and uploads use the full metadata
+index, so **Select All** includes photos beyond the visible batches.
+
 ## Updates and tests
 
 Before updating, back up the installed APK and private state. For a debuggable app,
@@ -48,10 +56,8 @@ adb uninstall com.photoprism.uploader.cameralab.test
 adb uninstall com.photoprism.uploader.cameralab
 ```
 
-Use synthetic data for writes; real-device checks may read aggregate counts but must
-not upload photos or expose names/credentials. Keep automatic uploads off. Token
-visibility is reserved for the owner's manual testing: do not reveal, screenshot or
-automate that control.
+Use the experiment app for upload tests; its fixtures and loopback receivers keep
+tests independent of a device’s photo library and backup servers.
 
 ## Reproduce the product screenshots
 

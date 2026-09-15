@@ -16,13 +16,8 @@ class MediaStoreImageRepository(private val contentResolver: ContentResolver, pr
      * Load all images in a specific album/bucket.
      */
     suspend fun loadImagesForAlbum(bucketId: String): List<MediaImage> = withContext(Dispatchers.IO) {
-        if (bucketId == "__whatsapp") {
-            return@withContext MediaStoreAlbumRepository(contentResolver, synthetic).loadAlbums()
-                .filter { it.name.equals("WhatsApp Images", ignoreCase = true) }
-                .flatMap { loadImagesForAlbum(it.bucketId) }
-        }
         if (com.photoprism.uploader.BuildConfig.BUILD_TYPE == "experiment") {
-            return@withContext requireNotNull(synthetic) { "Lab requires synthetic data" }.images(bucketId)
+            return@withContext requireNotNull(synthetic) { "Lab requires synthetic data" }.images(if (bucketId == "__whatsapp") "whatsapp" else bucketId)
         }
         val images = mutableListOf<MediaImage>()
 
@@ -34,8 +29,10 @@ class MediaStoreImageRepository(private val contentResolver: ContentResolver, pr
             MediaStore.Images.Media.DATE_ADDED
         )
 
-        val selection = "${MediaStore.Images.Media.BUCKET_ID} = ?"
-        val selectionArgs = arrayOf(bucketId)
+        val selection = if (bucketId == "__whatsapp")
+            "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ? COLLATE NOCASE"
+        else "${MediaStore.Images.Media.BUCKET_ID} = ?"
+        val selectionArgs = arrayOf(if (bucketId == "__whatsapp") "WhatsApp Images" else bucketId)
         val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
 
         contentResolver.query(

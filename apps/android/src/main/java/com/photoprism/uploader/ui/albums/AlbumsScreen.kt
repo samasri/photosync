@@ -17,12 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -52,9 +48,6 @@ import com.photoprism.uploader.domain.model.Album
 fun AlbumsScreen(
     viewModel: AlbumsViewModel,
     onAlbumClick: (Album) -> Unit,
-    onSettingsClick: () -> Unit,
-    onReviewClick: () -> Unit,
-    whatsAppOnly: Boolean = false
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -88,15 +81,7 @@ fun AlbumsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (whatsAppOnly) "WhatsApp" else "Albums") },
-                actions = {
-                    if (whatsAppOnly) androidx.compose.material3.TextButton(onClick = onReviewClick, enabled = hasPermission) {
-                        Text("Photo swipe")
-                    }
-                    IconButton(onClick = onSettingsClick) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                }
+                title = { Text("Albums") }
             )
         }
     ) { padding ->
@@ -147,7 +132,7 @@ fun AlbumsScreen(
 
                 else -> {
                     LazyColumn {
-                        items(uiState.albums.filter { !whatsAppOnly || it.name.equals("WhatsApp Images", ignoreCase = true) }) { album ->
+                        items(uiState.albums) { album ->
                             AlbumRow(
                                 album = album,
                                 onClick = { onAlbumClick(album) }

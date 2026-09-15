@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -34,7 +33,7 @@ import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CameraScreen(backup: CameraBackup, onSettings: () -> Unit, onView: (CameraPhoto) -> Unit) {
+fun CameraScreen(backup: CameraBackup, onView: (CameraPhoto) -> Unit) {
     val state by backup.state.collectAsState()
     var pending by rememberSaveable { mutableStateOf(false) }
     var replace by remember { mutableStateOf<CameraPhoto?>(null) }
@@ -60,9 +59,7 @@ fun CameraScreen(backup: CameraBackup, onSettings: () -> Unit, onView: (CameraPh
             confirmButton = { TextButton(onClick = { backup.uploadOne(photo, true); replace = null }) { Text("Replace server copy") } },
             dismissButton = { TextButton(onClick = { replace = null }) { Text("Cancel") } })
     }
-    Scaffold(topBar = { TopAppBar(title = { Text("Camera") }, actions = {
-        IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Settings") }
-    }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Camera") }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(if (state.automatic) "Automatic upload on" else "Automatic upload off")

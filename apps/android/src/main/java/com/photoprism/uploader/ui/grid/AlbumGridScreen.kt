@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material3.BottomAppBar
@@ -39,7 +38,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,9 +52,6 @@ import coil.compose.AsyncImage
 import com.photoprism.uploader.domain.model.MediaImage
 import com.photoprism.uploader.ui.sync.SyncProgressDialog
 import com.photoprism.uploader.ui.sync.UnmarkSyncedDialog
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Screen B: Grid of images with multi-select and sync button.
@@ -68,7 +66,6 @@ fun AlbumGridScreen(
     onImageClick: (MediaImage) -> Unit,
     browseOnly: Boolean = false,
     onReview: (() -> Unit)? = null,
-    onSettings: (() -> Unit)? = null,
     showBack: Boolean = true
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -103,7 +100,6 @@ fun AlbumGridScreen(
                     }
                 },
                 actions = {
-                    onSettings?.let { settings -> IconButton(onClick = settings) { Icon(androidx.compose.material.icons.Icons.Default.Settings, "Settings") } }
                     onReview?.let { review -> TextButton(onClick = review) { Text("Photo swipe") } }
                     if (!browseOnly && uiState.images.isNotEmpty()) {
                         TextButton(onClick = { viewModel.selectAll() }) {
@@ -194,28 +190,33 @@ fun AlbumGridScreen(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                         )
 
-                        val groupedImages = remember(uiState.images, uiState.albumName) {
-                            uiState.images.groupBy { formatDateHeader(getImageDate(it, uiState.albumName)) }
-                        }
-
                         val gridState = rememberSaveable(saver = LazyGridState.Saver) {
                             LazyGridState()
+                        }
+
+                        LaunchedEffect(gridState, uiState.images.size, uiState.hasMore) {
+                            if (uiState.hasMore) snapshotFlow {
+                                val layout = gridState.layoutInfo
+                                layout.visibleItemsInfo.lastOrNull()?.index?.let { it >= layout.totalItemsCount - 18 } ?: false
+                            }.distinctUntilChanged().collect { nearEnd ->
+                                if (nearEnd) viewModel.loadMore()
+                            }
                         }
 
                         LazyVerticalGrid(
                             columns = GridCells.Fixed(3),
                             state = gridState,
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.fillMaxSize().testTag("photo-grid")
                         ) {
-                            groupedImages.forEach { (date, images) ->
-                                item(span = { GridItemSpan(maxLineSpan) }) {
+                            uiState.groups.forEach { group ->
+                                item(key = "date:${group.label}", contentType = "date", span = { GridItemSpan(maxLineSpan) }) {
                                     Text(
-                                        text = date,
+                                        text = group.label,
                                         style = MaterialTheme.typography.titleMedium,
                                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                                     )
                                 }
-                                items(images) { image ->
+                                items(group.images, key = { it.id }, contentType = { "photo" }) { image ->
                                     val isSynced = image.uploadKey in uiState.syncedImageKeys
                                     ImageTile(
                                         image = image,
@@ -237,30 +238,6 @@ fun AlbumGridScreen(
             }
         }
     }
-}
-
-private fun formatDateHeader(timestampSeconds: Long): String {
-    val formatter = SimpleDateFormat("EEE, MMM d, yyyy", Locale.getDefault())
-    return formatter.format(Date(timestampSeconds * 1000))
-}
-
-private fun parseWhatsAppDate(displayName: String): Long? {
-    // Pattern: IMG-YYYYMMDD-WA####.jpg
-    val regex = Regex("""IMG-(\d{4})(\d{2})(\d{2})-WA\d+\.\w+""")
-    val match = regex.matchEntire(displayName) ?: return null
-
-    val (year, month, day) = match.destructured
-    val calendar = java.util.Calendar.getInstance().apply {
-        set(year.toInt(), month.toInt() - 1, day.toInt(), 0, 0, 0)
-    }
-    return calendar.timeInMillis / 1000
-}
-
-private fun getImageDate(image: MediaImage, albumName: String): Long {
-    if (albumName.equals("WhatsApp Images", ignoreCase = true)) {
-        parseWhatsAppDate(image.displayName)?.let { return it }
-    }
-    return image.dateAdded
 }
 
 @OptIn(ExperimentalFoundationApi::class)

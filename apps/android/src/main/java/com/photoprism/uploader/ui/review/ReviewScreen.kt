@@ -19,14 +19,14 @@ import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReviewScreen(model: ReviewViewModel, onBack: () -> Unit, onSettings: () -> Unit) {
+fun ReviewScreen(model: ReviewViewModel, onBack: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
     val image = state.images.firstOrNull()
     BackHandler(enabled = state.busy) { }
     Scaffold(topBar = {
         TopAppBar(title = { Text("WhatsApp • Photo swipe") }, navigationIcon = {
             TextButton(onClick = onBack, enabled = !state.busy) { Text("Back") }
-        }, actions = { TextButton(onClick = onSettings, enabled = !state.busy) { Text("Settings") } })
+        })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

@@ -2,9 +2,9 @@ package com.photoprism.uploader.ui.navigation
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,8 +32,8 @@ fun AppNavigation(appModule: AppModule) {
         nav.navigate("image_viewer/${Uri.encode(uri)}/${Uri.encode(name)}")
     }
     Scaffold(bottomBar = {
-        if (route in listOf("albums", "whatsapp", "camera")) NavigationBar {
-            listOf(Triple("albums", "Albums", Icons.Default.PhotoLibrary), Triple("whatsapp", "WhatsApp", Icons.Default.Chat), Triple("camera", "Camera", Icons.Default.CameraAlt)).forEach { (destination, label, icon) ->
+        if (route in listOf("albums", "whatsapp", "camera", "settings")) NavigationBar {
+            listOf(Triple("albums", "Albums", Icons.Default.PhotoLibrary), Triple("whatsapp", "WhatsApp", Icons.Default.Chat), Triple("camera", "Camera", Icons.Default.CameraAlt), Triple("settings", "Settings", Icons.Default.Settings)).forEach { (destination, label, icon) ->
                 NavigationBarItem(selected = route == destination, onClick = {
                     nav.navigate(destination) { popUpTo("albums") { saveState = true }; launchSingleTop = true; restoreState = true }
                 }, icon = { Icon(icon, null) }, label = { Text(label) })
@@ -46,7 +46,7 @@ fun AppNavigation(appModule: AppModule) {
                     val model: AlbumsViewModel = viewModel(factory = AlbumsViewModel.Factory(appModule.albumRepository))
                     AlbumsScreen(model, onAlbumClick = { album ->
                         nav.navigate("album_grid/${album.bucketId}/${Uri.encode(album.name)}/${destination == "albums"}")
-                    }, onSettingsClick = { nav.navigate("settings") }, onReviewClick = { nav.navigate("review") }, whatsAppOnly = destination == "whatsapp")
+                    })
                 }
             }
             composable("whatsapp") {
@@ -54,10 +54,10 @@ fun AppNavigation(appModule: AppModule) {
                     appModule.syncOrchestrator, appModule.settingsDataStore, appModule.uploadedItemsDao))
                 AlbumGridScreen("__whatsapp", "WhatsApp Images", model, onBack = {},
                     onImageClick = { view(it.contentUri.toString(), it.displayName) },
-                    onReview = { nav.navigate("review") }, onSettings = { nav.navigate("settings") }, showBack = false)
+                    onReview = { nav.navigate("review") }, showBack = false)
             }
             composable("camera") {
-                CameraScreen(appModule.cameraBackup, onSettings = { nav.navigate("settings") }, onView = { view(it.uri.toString(), it.name) })
+                CameraScreen(appModule.cameraBackup, onView = { view(it.uri.toString(), it.name) })
             }
             composable("album_grid/{bucketId}/{albumName}/{browseOnly}", arguments = listOf(
                 navArgument("bucketId") { type = NavType.StringType }, navArgument("albumName") { type = NavType.StringType },
@@ -75,12 +75,10 @@ fun AppNavigation(appModule: AppModule) {
             }
             composable("review") {
                 val model: com.photoprism.uploader.ui.review.ReviewViewModel = viewModel(factory = com.photoprism.uploader.ui.review.ReviewViewModel.Factory(appModule))
-                com.photoprism.uploader.ui.review.ReviewScreen(model, onBack = { nav.popBackStack() }, onSettings = { nav.navigate("settings") })
+                com.photoprism.uploader.ui.review.ReviewScreen(model, onBack = { nav.popBackStack() })
             }
             composable("settings") {
-                Scaffold(topBar = { TopAppBar(title = { Text("Settings") }, navigationIcon = {
-                    IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                }) }) { inner ->
+                Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { inner ->
                     Column(Modifier.padding(inner).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         OutlinedButton(onClick = { nav.navigate("whatsapp-settings") }, modifier = Modifier.fillMaxWidth()) { Text("WhatsApp backup") }
                         OutlinedButton(onClick = { nav.navigate("camera-settings") }, modifier = Modifier.fillMaxWidth()) { Text("Camera backup") }

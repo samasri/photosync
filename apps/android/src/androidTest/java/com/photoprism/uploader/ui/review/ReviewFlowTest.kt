@@ -50,7 +50,7 @@ class ReviewFlowTest {
                 PhotoPrismUploaderTheme {
                     if (showViewer.value) com.photoprism.uploader.ui.viewer.ImageViewerScreen(image.contentUri.toString(), image.displayName, {})
                     else if (showGrid.value) AlbumGridScreen(image.bucketId, "WhatsApp Images", grid, {}, { showViewer.value = true })
-                    else ReviewScreen(model, {}, {})
+                    else ReviewScreen(model, {})
                 }
             }
             compose.waitUntil(15_000) { !model.state.value.loading }
