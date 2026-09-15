@@ -208,7 +208,7 @@ fun AlbumGridScreen(
                                 columns = GridCells.Fixed(3),
                                 state = gridState,
                                 modifier = Modifier.fillMaxSize()
-                                    .padding(end = if (bucketId == "__whatsapp" && uiState.totalImages > 90) 48.dp else 0.dp)
+                                    .padding(end = if (uiState.totalImages > 90) 48.dp else 0.dp)
                                     .testTag("photo-grid")
                             ) {
                                 uiState.groups.forEach { group ->
@@ -236,7 +236,7 @@ fun AlbumGridScreen(
                                     }
                                 }
                             }
-                            if (bucketId == "__whatsapp" && uiState.totalImages > 90) {
+                            if (uiState.totalImages > 90) {
                                 PhotoDateScrubber(gridState, uiState.datePositions, uiState.totalGridItems,
                                     onSeek = viewModel::revealScrollTarget,
                                     modifier = Modifier.align(Alignment.CenterEnd))

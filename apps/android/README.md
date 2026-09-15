@@ -40,7 +40,10 @@ loads thumbnails only for composed tiles. Selection and uploads use the full met
 index, so **Select All** includes photos beyond the visible batches. The date scrubber
 maps the full index to grid positions (including day headers), exposes metadata
 through the target, then waits for layout before scrolling. It never decodes all
-the photos between the old and new positions.
+the photos between the old and new positions. Album photo grids share this scrubber.
+Camera uses the same control in **All photos**, with a background date index based
+on MediaStore `date_added` (matching its grid order). Collections of 90 photos or
+fewer omit the control.
 
 ## Updates and tests
 

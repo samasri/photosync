@@ -25,7 +25,11 @@ import java.time.format.DateTimeFormatter
 class WhatsAppPagingTest {
     @get:Rule val compose = createComposeRule()
 
-    @Test fun largeLibraryPagesAndKeepsSelection(): Unit = runBlocking {
+    @Test fun largeLibraryPagesAndKeepsSelection() = checkLibrary("__whatsapp", false)
+
+    @Test fun albumGridCanJumpAcrossDates() = checkLibrary("whatsapp", true)
+
+    private fun checkLibrary(bucket: String, browseOnly: Boolean): Unit = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         check(context.packageName == "com.photoprism.uploader.cameralab")
         val app = AppModule(context, scheduleUploads = false)
@@ -49,16 +53,16 @@ class WhatsAppPagingTest {
                     onDispose { view.keepScreenOn = false }
                 }
                 PhotoPrismUploaderTheme {
-                    AlbumGridScreen("__whatsapp", "WhatsApp Images", model, {}, {}, showBack = false)
+                    AlbumGridScreen(bucket, "WhatsApp Images", model, {}, {}, browseOnly = browseOnly, showBack = false)
                 }
             }
-            compose.waitUntil(15000) { model.uiState.value.images.size == 90 }
+            compose.waitUntil(15000) { model.uiState.value.images.size == if (browseOnly) count else 90 }
             val milliseconds = (System.nanoTime() - started) / 1_000_000
             InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
-                putString("stream", "Synthetic WhatsApp: $count photos, first 90 ready in ${milliseconds}ms\n")
+                putString("stream", "Synthetic photo grid: $count photos, initial batch ready in ${milliseconds}ms\n")
             })
             assertEquals(count, model.uiState.value.totalImages)
-            assertTrue(model.uiState.value.hasMore)
+            assertEquals(!browseOnly, model.uiState.value.hasMore)
             val first = model.uiState.value.images.first()
             compose.runOnIdle { model.toggleSelection(first) }
             compose.onNodeWithTag("photo-grid").performScrollToIndex(95)

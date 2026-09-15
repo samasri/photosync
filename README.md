@@ -12,7 +12,8 @@ Each backup workflow has independent settings, credentials and state.
 
 Explore the phone's photo albums with cover images and counts. Open an album,
 then tap a photo to view it and pinch or double-tap to zoom. Albums is browse-only;
-use the WhatsApp or Camera tab to upload.
+use the WhatsApp or Camera tab to upload. In larger albums, drag the right-edge
+scrollbar to jump by month and year.
 
 <img src="docs/screenshots/albums.png" width="360" alt="Albums tab showing WhatsApp and Camera albums" />
 
@@ -77,7 +78,8 @@ Left to right, top to bottom:
 <summary><strong>Back up your Camera roll</strong></summary>
 
 See images in `DCIM/Camera/`, synced checkmarks, and pending filenames. Upload
-individually or choose **Upload all**. Videos are not included.
+individually or choose **Upload all**. In larger camera rolls, the **All photos**
+scrollbar jumps by month and year. Videos are not included.
 
 - Automatic upload is **off by default**. Camera reuses saved results until the
   configured interval expires; **Check now** always forces a comparison. Neither uploads.

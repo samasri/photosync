@@ -29,7 +29,7 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class CameraPhoto(val uri: Uri, val name: String, val size: Long, val stamp: String,
-    val hash: String = "", val status: String = "unchecked", val serverHash: String = "", val kept: Boolean = false)
+    val hash: String = "", val status: String = "unchecked", val serverHash: String = "", val kept: Boolean = false, val dateAdded: Long = 0)
 data class CameraState(val photos: List<CameraPhoto> = emptyList(), val busy: Boolean = false,
     val message: String = "Not checked yet", val checked: Long = 0, val automatic: Boolean = false,
     val interval: Long = 60, val url: String = "", val token: String = "")
@@ -118,7 +118,7 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
         val photos = mutableListOf<CameraPhoto>()
         if (BuildConfig.BUILD_TYPE == "experiment") {
             return SyntheticLibrary(context).files().map { file ->
-                cached(CameraPhoto(Uri.fromFile(file), file.name, file.length(), "${file.length()}:${file.lastModified()}"))
+                cached(CameraPhoto(Uri.fromFile(file), file.name, file.length(), "${file.length()}:${file.lastModified()}", dateAdded = file.lastModified() / 1000))
             }
         }
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -130,7 +130,7 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
             while (cursor.moveToNext()) {
                 val uri = ContentUris.withAppendedId(collection, cursor.getLong(0))
                 val stamp = volumeVersion + ":" + (2 until columns.size).joinToString(":") { cursor.getString(it) ?: "0" }
-                photos.add(cached(CameraPhoto(uri, cursor.getString(1), cursor.getLong(2), stamp)))
+                photos.add(cached(CameraPhoto(uri, cursor.getString(1), cursor.getLong(2), stamp, dateAdded = cursor.getLong(4))))
             }
         } ?: error("Cannot read camera library")
         return photos
