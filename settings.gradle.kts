@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "PhotoPrismUploader"
 include(":app")
+project(":app").projectDir = file("apps/android")

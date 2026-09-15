@@ -24,3 +24,11 @@ test-artifacts/
 
 # Local environment configuration
 .env
+
+# Python service caches
+__pycache__/
+*.pyc
+.kotlin/
+
+# Camera inventory and local service state
+services/camera/state/

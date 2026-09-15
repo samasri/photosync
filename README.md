@@ -1,135 +1,112 @@
 # PhotoSync
 
-PhotoSync is an Android app for uploading photos from your phone to PhotoPrism. Browse your albums, pick several photos at once, or review WhatsApp pictures with a swipe. Your original photos stay on your phone.
+Browse your Android photo library and back up chosen photos to your own servers.
+**Albums** is browse-only; **WhatsApp** offers selection and swipe review;
+**Camera** compares your camera roll with an existing archive.
+Each backup workflow has independent settings, credentials and state.
 
-You need your own PhotoPrism server and its login details. PhotoSync sends files using WebDAV (protocol used by PhotoPrism to accept uploads directly to its server).
-
-<details>
-<summary><strong>Pick photos from your albums</strong></summary>
-
-Browse albums with cover images and photo counts. Open an album to see its photos grouped by date. Tap photos to select them, then tap **Sync now** to upload. Use **Select All** for a whole album.
-
-Green checkmarks show photos that PhotoSync has successfully uploaded. Photos still waiting to upload do not get a green checkmark.
-
-![Albums screen listing WhatsApp Images, Camera and other albums with cover images and photo counts](docs/screenshots/albums.png)
-
-![Album grid grouped by date, with four photos selected and previously uploaded photos marked by green checkmarks](docs/screenshots/album-selection.png)
+## Features
 
 <details>
-<summary>Photo credits</summary>
+<summary><strong>Browse your pictures</strong></summary>
 
-Sample photos from [Unsplash](https://unsplash.com), fetched through [Lorem Picsum](https://picsum.photos) and free to use under the [Unsplash License](https://unsplash.com/license).
+Explore the phone's photo albums with cover images and counts. Open an album,
+then tap a photo to view it and pinch or double-tap to zoom. Albums is browse-only;
+use the WhatsApp or Camera tab to upload.
 
-Album covers, top to bottom:
-
-- [Alejandro Escamilla](https://unsplash.com/photos/y83Je1OC6Wc)
-- [Alejandro Escamilla](https://unsplash.com/photos/Dl6jeyfihLk)
-- [Zugr](https://unsplash.com/photos/kmF_Aq8gkp0)
-- [Adam Przewoski](https://unsplash.com/photos/umchkHwkdyM)
-- [Alejandro Escamilla](https://picsum.photos/id/25/1080/2400)
-- [Fabio Rose](https://unsplash.com/photos/HJSIZsC4te8)
-- [Isaak Dury](https://unsplash.com/photos/YhZbnxqtooM)
-- [Charles L.](https://unsplash.com/photos/5z8CIELxW1Y)
-
-Album grid, top to bottom:
-
-- [Alejandro Escamilla](https://unsplash.com/photos/y83Je1OC6Wc)
-- [Paul Jarvis](https://unsplash.com/photos/Cm7oKel-X2Q)
-- [Paul Jarvis](https://unsplash.com/photos/Ps2n0rShqaM)
-- [Caleb George](https://unsplash.com/photos/zdjOYZeJj3w)
-- [Matthew Wiebe](https://unsplash.com/photos/nOhUx3tiaQQ)
-- [Keith Misner](https://unsplash.com/photos/h0Vxgz5tyXA)
-- [Fré Sonneveld](https://unsplash.com/photos/1rZcfdsjoR4)
-- [Yair Hazout](https://unsplash.com/photos/Y-eIZ3g8_ko)
-- [Bartosz Bąk](https://unsplash.com/photos/4bYpcsaDhpE)
-- [Sylwia Bartyzel](https://unsplash.com/photos/OdAqbedkfiA)
-
-</details>
+<img src="docs/screenshots/albums.png" width="360" alt="Current Albums tab with synthetic WhatsApp and Camera albums" />
 
 </details>
 
 <details>
-<summary><strong>Sort through WhatsApp photos with a swipe</strong></summary>
+<summary><strong>Selectively back up WhatsApp images</strong></summary>
 
-Tap **Photo swipe** on the Albums screen to review pictures from albums named **WhatsApp Images**, oldest first.
+Tap photos to select them, then choose **Sync now**. Green checkmarks show upload
+history; selected photos have a separate highlight. Double-tap to view and zoom.
 
-- **Swipe right** or tap **Upload** to add a photo to your uploads.
-- **Swipe left** or tap **Ignore** to skip it. This does not delete the photo.
-- Tap **Undo last ignore** to reverse your most recent skip during that session.
+**Photo swipe** lets you review pictures individually: swipe right to queue an
+upload, left to ignore without deleting, and undo your last ignore. Progress persists.
+On first review, existing photos dated before January 1, 2026 are skipped; older
+photos imported later still appear and the grid allows manual selection at any time.
 
-PhotoSync remembers your decisions so you can pick up where you left off. A remaining count shows how much is left to review. When available, it reads dates from WhatsApp filenames to help put pictures in order.
+Queued photos are saved privately and retried when connected, roughly hourly subject
+to Android scheduling. **Settings → WhatsApp backup** shows pending uploads and retry
+controls. Avoid clearing app storage while uploads are pending.
 
-On your first review, existing photos dated before **January 1, 2026** are automatically skipped. This starting date is fixed. Older photos imported later still appear for review. You can select older photos from the album grid at any time.
-
-![Photo swipe screen showing a WhatsApp photo with its date, remaining count, Ignore and Upload buttons, and an available Undo last ignore](docs/screenshots/photo-swipe.png)
-
-<details>
-<summary>Photo credits</summary>
-
-Sample photos from [Unsplash](https://unsplash.com), fetched through [Lorem Picsum](https://picsum.photos) and free to use under the [Unsplash License](https://unsplash.com/license).
-
-Photo by [Kundan Ramisetti](https://unsplash.com/photos/OODWPtfXAF0).
-
-</details>
+<img src="docs/screenshots/whatsapp.png" width="360" alt="Current WhatsApp tab with older stock photos synced, two newer photos selected for upload, and the newest unselected" />
 
 </details>
 
 <details>
-<summary><strong>Keep choosing photos while offline</strong></summary>
+<summary><strong>Back up your Camera roll</strong></summary>
 
-PhotoSync saves a copy of each queued photo in the app until it uploads. You can keep reviewing without a connection, and pending uploads survive closing the app.
+See images in `DCIM/Camera/`, synced checkmarks, and pending filenames. Upload
+individually or choose **Upload all**. Videos are not included.
 
-Uploads run in the background when connected. Failed uploads retry about every hour, though Android may delay them to save battery. In **Settings → Pending uploads**, you can see what is waiting, read any errors, and tap **Retry pending uploads now**.
+- Automatic upload is **off by default**. Opening Camera and **Check now** only compare.
+- Scheduled checks default to hourly; they upload only when automatic mode is enabled.
+- Original bytes and filenames are preserved in a flat server folder. Original-photo
+  metadata permission is required for accurate comparisons.
+- Identical contents anywhere in the archive count as backed up. Same-name files
+  with different contents require **Keep** or confirmed **Replace**; bulk/automatic
+  uploads skip conflicts. Replacement overwrites the old server copy.
+- Unreachable servers retain the last known status. Phone deletion never deletes a backup.
 
-Saved copies use space on your phone and are removed after a successful upload. Keep PhotoSync installed and avoid clearing its storage while uploads are pending.
-
-![Settings scrolled to Pending uploads, showing a failed upload with its error and attempt count, two photos waiting, and the retry button](docs/screenshots/pending-uploads.png)
+<img src="docs/screenshots/camera.png" width="360" alt="Current Camera tab with All photos selected, seven synced stock photos and five pending uploads" />
 
 </details>
 
-## Get started
+<details>
+<summary>Screenshot photo credits</summary>
 
-1. Install the app using the build instructions below.
-2. Open PhotoSync and allow access to your photos.
-3. Tap the Settings icon on the Albums screen.
-4. Enter your server's WebDAV upload address in **Base URL**, then your username and password. Tap **Save Settings**.
-5. Open an album to select photos, or tap **Photo swipe** to review WhatsApp images.
+These captures use the isolated test app and a separate Camera server with stock
+photos and synthetic records. No personal photos or credentials appear.
+Images come from [Unsplash](https://unsplash.com) via [Lorem Picsum](https://picsum.photos),
+used under the [Unsplash License](https://unsplash.com/license).
 
-Use the upload folder address supplied by whoever manages your server. The example address bundled with the app must be replaced with your own.
+Both grids use this order, left to right and top to bottom. Camera’s album cover uses photo 1; WhatsApp’s uses photo 7.
 
-## Technical Stack
+1. [Paul Jarvis](https://unsplash.com/photos/6J--NXulQCs) (Picsum 10)
+2. [Paul Jarvis](https://unsplash.com/photos/Cm7oKel-X2Q) (Picsum 11)
+3. [Paul Jarvis](https://unsplash.com/photos/I_9ILwtsl_k) (Picsum 12)
+4. [Paul Jarvis](https://unsplash.com/photos/3MtiSMdnoCo) (Picsum 13)
+5. [Paul Jarvis](https://unsplash.com/photos/IQ1kOQTJrOQ) (Picsum 14)
+6. [Paul Jarvis](https://unsplash.com/photos/NYDo21ssGao) (Picsum 15)
+7. [Paul Jarvis](https://unsplash.com/photos/gkT4FfgHO5o) (Picsum 16)
+8. [Paul Jarvis](https://unsplash.com/photos/Ven2CV8IJ5A) (Picsum 17)
+9. [Paul Jarvis](https://unsplash.com/photos/Ps2n0rShqaM) (Picsum 18)
+10. [Paul Jarvis](https://unsplash.com/photos/P7Lh0usGcuk) (Picsum 19)
+11. [Aleks Dorohovich](https://unsplash.com/photos/nJdwUHmaY8A) (Picsum 20)
+12. [Alejandro Escamilla](https://unsplash.com/photos/jVb0mSn0LbE) (Picsum 21)
 
-PhotoSync uses Kotlin and Jetpack Compose. MediaStore supplies the phone's photos, Room stores upload history and pending uploads, DataStore saves settings and review decisions, and WorkManager schedules retries. Uploads use OkHttp `PUT` requests with HTTP Basic authentication.
+</details>
 
-The main app is in [`app/`](app/). See [`CODEBASE.md`](CODEBASE.md) for an introduction to the code and Android concepts.
+## Build and get started
 
-### Build and install
+Use JDK 17, Android SDK 35 and Build Tools 35.0.0, or the included Nix environment:
 
-Use JDK 17, Android SDK 35, and Build Tools 35.0.0. The included Nix shell provides these on Apple Silicon macOS:
-
-```bash
-nix develop
-./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+```sh
+nix develop --command ./gradlew :app:assembleDebug :app:lintDebug
+adb install -r apps/android/build/outputs/apk/debug/app-debug.apk
 ```
 
-Without Nix, configure the same tools locally and run the Gradle and ADB commands above. Enable USB debugging on the connected device to install with ADB.
+Back up an existing installation before updating. Keep its signing key and app ID,
+and use `install -r` to preserve state.
 
-Optionally copy [`.env.example`](.env.example) to `.env` and set `PHOTOSYNC_SERVER_URL` and `PHOTOSYNC_USERNAME` before building. `.env` is ignored by Git. Both values can also be changed in the app's Settings.
+In **Settings**, configure **WhatsApp backup** with a PhotoPrism/WebDAV upload URL
+and login. For **Camera backup**, [deploy the Camera service](services/camera/README.md#deployment)
+using the root `.env.example` and Compose file, then enter its HTTPS URL and token.
+Keep automatic upload off while trying individual uploads.
 
-To update an existing installation while keeping its history, use `adb install -r` with the same application ID (`com.photoprism.uploader`) and signing certificate. Do not uninstall or clear app storage to update.
+## Development
 
-### Test with PhotoSync Lab
+Android lives in `apps/android/` (Gradle module `:app`), and the Python Camera API
+in `services/camera/`. Root Compose runs the API behind an HTTPS gateway.
 
-The `experiment` variant installs as **PhotoSync Lab**, with its own settings and data. Its records are not imported into the main app.
+- [Android maintenance and tests](apps/android/README.md)
+- [Camera deployment, logs and protocol](services/camera/README.md)
+- [Known limitations](issues.md)
 
-```bash
-./gradlew :app:assembleExperiment :app:assembleExperimentAndroidTest :app:lintDebug
-adb install -r app/build/outputs/apk/experiment/app-experiment.apk
-adb install -r app/build/outputs/apk/androidTest/experiment/app-experiment-androidTest.apk
-adb shell am instrument -w com.photoprism.uploader.experiment.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-Device tests use synthetic photos and an on-device HTTP server. They cover review and undo, date boundaries, zoom gesture safety, persistent uploads, retries, cleanup, and upload checkmarks. Password visibility is checked manually and is intentionally excluded from automated tests.
-
-For the screenshot placeholders above, use PhotoSync Lab with sample photos and test server details. Keep passwords hidden. Save the images at the suggested paths and replace each placeholder with its image.
+Credentials belong in ignored `.env` files. Private device backups, indexes and test
+artifacts must stay ignored. Public screenshots use stock photos, synthetic records
+and photo credits; never personal photos or visible credentials.

@@ -2,8 +2,10 @@
 
 ## Handle Android partial photo-library access
 
-The main app targets Android 14 or newer but currently treats photo access as a
-simple granted/denied permission. Android 14 can grant access to only a selected
+The main app targets Android 15 but currently treats photo access as a
+simple granted/denied permission. Camera requires full access and stops when it
+is unavailable; Albums and WhatsApp still need explicit partial-access handling.
+Android 14 can grant access to only a selected
 subset of photos. In that state, album counts, duplicate detection, and upload
 choices may be incomplete without the app explaining why.
 
@@ -18,8 +20,8 @@ Follow-up work:
 
 References:
 
-- `app/src/main/AndroidManifest.xml`
-- `app/src/main/java/com/photoprism/uploader/ui/albums/AlbumsScreen.kt`
+- `apps/android/src/main/AndroidManifest.xml`
+- `apps/android/src/main/java/com/photoprism/uploader/ui/albums/AlbumsScreen.kt`
 - https://developer.android.com/about/versions/14/changes/partial-photo-video-access
 
 ## Remove unsafe cleartext credential transport
@@ -43,6 +45,6 @@ Follow-up work:
 
 References:
 
-- `app/src/main/res/xml/network_security_config.xml`
-- `app/src/main/java/com/photoprism/uploader/data/webdav/WebDavUploader.kt`
-- `app/src/main/java/com/photoprism/uploader/data/local/settings/SettingsDataStore.kt`
+- `apps/android/src/main/res/xml/network_security_config.xml`
+- `apps/android/src/main/java/com/photoprism/uploader/data/webdav/WebDavUploader.kt`
+- `apps/android/src/main/java/com/photoprism/uploader/data/local/settings/SettingsDataStore.kt`

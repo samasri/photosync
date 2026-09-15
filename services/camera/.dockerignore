@@ -1,0 +1,5 @@
+*
+!Dockerfile
+!server.py
+!healthcheck.py
+!index_archive.py

@@ -1,0 +1,54 @@
+name: photosync
+
+services:
+  camera:
+    build:
+      context: ./services/camera
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      CAMERA_STORAGE_ROOT: /photos
+      CAMERA_MOUNT_ROOT: /photos
+      CAMERA_INDEX_PATH: /state/inventory.sqlite3
+      CAMERA_TOKEN: ${CAMERA_TOKEN:?Set CAMERA_TOKEN in .env}
+      CAMERA_HOST: 0.0.0.0
+      CAMERA_PORT: "8787"
+    volumes:
+      - type: bind
+        source: ${CAMERA_ARCHIVE_PATH:?Set CAMERA_ARCHIVE_PATH in .env}
+        target: /photos
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./services/camera/state
+        target: /state
+        bind:
+          create_host_path: false
+    expose:
+      - "8787"
+    networks:
+      internal-proxy:
+        aliases:
+          - photosync-camera
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "healthcheck.py"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+networks:
+  internal-proxy:
+    name: internal-proxy
+    external: true
