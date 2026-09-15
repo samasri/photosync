@@ -79,7 +79,8 @@ Left to right, top to bottom:
 See images in `DCIM/Camera/`, synced checkmarks, and pending filenames. Upload
 individually or choose **Upload all**. Videos are not included.
 
-- Automatic upload is **off by default**. Opening Camera and **Check now** only compare.
+- Automatic upload is **off by default**. Camera reuses saved results until the
+  configured interval expires; **Check now** always forces a comparison. Neither uploads.
 - Scheduled checks default to hourly; they upload only when automatic mode is enabled.
 - Original bytes and filenames are preserved in a flat server folder. Original-photo
   metadata permission is required for accurate comparisons.

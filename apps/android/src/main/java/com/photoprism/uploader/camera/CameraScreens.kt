@@ -40,14 +40,14 @@ fun CameraScreen(backup: CameraBackup, onView: (CameraPhoto) -> Unit) {
     var photoAccess by remember { mutableStateOf(backup.hasPhotoAccess()) }
     val permissionRequest = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         photoAccess = backup.hasPhotoAccess()
-        backup.checkNow()
+        backup.refreshOnResume()
     }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, backup) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 photoAccess = backup.hasPhotoAccess()
-                backup.checkNow()
+                backup.refreshOnResume()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

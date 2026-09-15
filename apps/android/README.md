@@ -12,8 +12,13 @@ Camera owns `camera-backup` preferences, `camera-index.db` and the
 `camera-backup-periodic` WorkManager job. Keep them independent: WhatsApp checkmarks
 reflect local upload history; Camera reflects the last complete server comparison.
 
-Camera checks on screen resume, manually and periodically. Only periodic checks
-with automatic mode enabled upload afterward. Automatic mode defaults off.
+Camera checks on resume only when the configured interval has elapsed; **Check now**
+forces a comparison. Resume and periodic work share a persisted last-attempt time
+(also throttling failures), while last-checked records successful comparisons.
+Fresh results reload from the local index after restart; new local photos remain
+unchecked until a comparison. Changing servers or restoring photo access invalidates
+the interval guard. Only periodic work with automatic mode enabled uploads afterward,
+and never from a failed comparison. Automatic mode defaults off.
 Network errors retain prior results; changing servers invalidates comparison status.
 
 Both Camera hashing and uploading must use `MediaStore.setRequireOriginal` with

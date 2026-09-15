@@ -15,6 +15,7 @@ import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 
 /** Exercise the production backup engine with private synthetic photos and a fake server. */
 class CameraBackupTest {
@@ -87,7 +88,8 @@ class CameraBackupTest {
             }
         }
         server.start()
-        val backup = CameraBackup(context)
+        var now = 1_800_000_000_000L
+        val backup = CameraBackup(context) { now }
         try {
             assertFalse(backup.state.value.automatic)
             backup.saveSettings(server.url("/").toString(), "test", false, 60)
@@ -114,6 +116,7 @@ class CameraBackupTest {
             idle(backup) { backup.state.value.photos.first().status == "synced" }
             assertEquals(2, methods.count { it == "PUT" })
             offline = true
+            now += TimeUnit.HOURS.toMillis(1)
             val before = backup.state.value.photos
             assertFalse(backup.periodic())
             assertEquals(before, backup.state.value.photos)
@@ -160,4 +163,81 @@ class CameraBackupTest {
             server.shutdown()
         }
     }
+    @Test fun intervalCacheForceRefreshRestartAndFailureThrottle() = runBlocking {
+        assertTrue(context.packageName.endsWith(".cameralab"))
+        context.getSharedPreferences("camera-backup", Context.MODE_PRIVATE).edit().clear().commit()
+        var now = 1_800_000_000_000L
+        var offline = false
+        val server = MockWebServer()
+        server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse {
+                if (offline) return MockResponse().setResponseCode(503)
+                return when (request.path) {
+                    "/v1/refresh" -> MockResponse().setBody("{\"generation\":1}")
+                    "/v1/check" -> {
+                        val items = JSONObject(request.body.readUtf8()).getJSONArray("items")
+                        for (i in 0 until items.length()) items.getJSONObject(i)
+                            .put("status", "missing").put("serverHash", JSONObject.NULL)
+                        MockResponse().setBody(JSONObject().put("items", items).toString())
+                    }
+                    else -> MockResponse().setResponseCode(500)
+                }
+            }
+        }
+        server.start()
+        var backup = CameraBackup(context) { now }
+        try {
+            backup.saveSettings(server.url("/").toString(), "synthetic", false, 60)
+            assertTrue(backup.refreshIfDue())
+            assertEquals(2, server.requestCount)
+            val photos = backup.state.value.photos
+            assertTrue(photos.isNotEmpty())
+            // Reopening, concurrent resumes and periodic work all reuse this comparison.
+            coroutineScope { repeat(3) { launch { assertTrue(backup.refreshIfDue()) } } }
+            assertTrue(backup.periodic())
+            assertEquals(2, server.requestCount)
+            backup = CameraBackup(context) { now }
+            assertTrue(backup.refreshIfDue())
+            assertEquals(photos, backup.state.value.photos)
+            assertEquals(2, server.requestCount)
+            now += TimeUnit.MINUTES.toMillis(59)
+            assertTrue(backup.refreshIfDue())
+            assertEquals(2, server.requestCount)
+            now += TimeUnit.MINUTES.toMillis(1)
+            assertTrue(backup.refreshIfDue())
+            assertEquals(4, server.requestCount)
+            // The button bypasses the fresh cache, including repeated explicit retries.
+            now += 1
+            backup.checkNow()
+            idle(backup) { server.requestCount == 6 && backup.state.value.checked == now }
+            assertEquals(6, server.requestCount)
+            // A shorter configured interval is used immediately.
+            backup.saveSettings(server.url("/").toString(), "synthetic", false, 15)
+            now += TimeUnit.MINUTES.toMillis(15)
+            assertTrue(backup.refreshIfDue())
+            assertEquals(8, server.requestCount)
+            offline = true
+            now += 1
+            backup.checkNow()
+            idle(backup) { server.requestCount == 9 && backup.state.value.message.startsWith("Could not") }
+            assertEquals(photos, backup.state.value.photos)
+            assertTrue(backup.refreshIfDue())
+            assertEquals(9, server.requestCount)
+            backup.saveSettings(server.url("/").toString(), "synthetic", true, 15)
+            assertTrue(backup.periodic())
+            assertEquals(9, server.requestCount) // no stale automatic upload
+            now += TimeUnit.MINUTES.toMillis(15)
+            assertFalse(backup.refreshIfDue())
+            assertEquals(10, server.requestCount)
+            // Server changes invalidate the interval guard.
+            offline = false
+            backup.saveSettings(server.url("/").toString(), "changed-synthetic", false, 15)
+            assertTrue(backup.refreshIfDue())
+            assertEquals(12, server.requestCount)
+        } finally {
+            backup.saveSettings("", "", false, 60)
+            server.shutdown()
+        }
+    }
+
 }

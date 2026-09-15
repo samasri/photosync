@@ -35,7 +35,7 @@ data class CameraState(val photos: List<CameraPhoto> = emptyList(), val busy: Bo
     val interval: Long = 60, val url: String = "", val token: String = "")
 
 /** Camera has its own settings, index and scheduling; it never uses the WhatsApp queue. */
-class CameraBackup(private val context: Context) {
+class CameraBackup(private val context: Context, private val now: () -> Long = System::currentTimeMillis) {
     private val prefs = context.getSharedPreferences("camera-backup", Context.MODE_PRIVATE)
     private val db by lazy {
         SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath("camera-index.db").also { it.parentFile?.mkdirs() }, null).apply {
@@ -46,7 +46,7 @@ class CameraBackup(private val context: Context) {
         // Invalidate the old redacted-byte index independently of credentials and WhatsApp.
         if (prefs.getInt("fingerprint-version", 0) != 1) {
             db.delete("photos", null, null)
-            check(prefs.edit().putInt("fingerprint-version", 1).putLong("checked", 0).commit())
+            check(prefs.edit().putInt("fingerprint-version", 1).putLong("checked", 0).remove("check-attempt").remove("check-failed").commit())
         }
         return CameraState(automatic = prefs.getBoolean("automatic", false),
         interval = prefs.getLong("interval", 60), url = prefs.getString("url", "")!!,
@@ -74,7 +74,7 @@ class CameraBackup(private val context: Context) {
         val changed = normalized != mutable.value.url || token != mutable.value.token
         prefs.edit().putString("url", normalized).putString("token", token.trim())
             .putBoolean("automatic", automatic).putLong("interval", interval)
-            .apply { if (changed) putLong("checked", 0) }.commit()
+            .apply { if (changed) { putLong("checked", 0); remove("check-attempt"); remove("check-failed") } }.commit()
         if (changed) {
             // Reset in-memory status immediately; persisted rows are scoped by the destination below.
             mutable.value = initial().copy(photos = mutable.value.photos.map { it.copy(status = "unchecked", serverHash = "", kept = false) }, message = "Server changed · check required")
@@ -172,6 +172,29 @@ class CameraBackup(private val context: Context) {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    fun refreshOnResume() { scope.launch { refreshIfDue() } }
+
+    suspend fun refreshIfDue(): Boolean = runOperation { checkIfDueLocked() }
+
+    private suspend fun checkIfDueLocked() {
+        val lastAttempt = prefs.getLong("check-attempt", mutable.value.checked)
+        val elapsed = now() - lastAttempt
+        if (lastAttempt == 0L || elapsed < 0 || elapsed >= TimeUnit.MINUTES.toMillis(mutable.value.interval)) {
+            checkLocked()
+        } else {
+            // Reload persisted checkmarks after process restart, and show newly added
+            // local photos as unchecked without contacting the server or hashing them.
+            val photos = scan()
+            mutable.value = mutable.value.copy(photos = photos, message =
+                if (prefs.getBoolean("check-failed", false)) "Last check failed · showing saved status. Use Check now to retry."
+                else summary(photos))
+        }
+    }
+
+    private fun summary(photos: List<CameraPhoto>): String =
+        "${photos.count { it.status == "synced" }} backed up · ${photos.count { it.status == "missing" }} pending · ${photos.count { it.status == "conflict" }} conflicts" +
+            if (photos.any { it.status == "unchecked" }) " · ${photos.count { it.status == "unchecked" }} not checked yet" else ""
+
     fun checkNow() { scope.launch { runOperation { checkLocked() } } }
     fun uploadOne(photo: CameraPhoto, replace: Boolean = false) {
         val selectedDestination = destination()
@@ -201,8 +224,10 @@ class CameraBackup(private val context: Context) {
     fun keepServer(photo: CameraPhoto) { scope.launch { mutex.withLock { updatePhoto(photo.copy(kept = true)) } } }
 
     suspend fun periodic(): Boolean = runOperation {
-        checkLocked()
-        if (mutable.value.automatic) uploadMissing(true)
+        checkIfDueLocked()
+        // A recent failed comparison must not cause automatic uploads from stale status.
+        if (mutable.value.automatic && mutable.value.checked > 0 &&
+            !prefs.getBoolean("check-failed", false)) uploadMissing(true)
     }
 
     private suspend fun runOperation(block: suspend () -> Unit): Boolean = withContext(Dispatchers.IO) {
@@ -214,7 +239,7 @@ class CameraBackup(private val context: Context) {
                 true
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: SecurityException) {
-                prefs.edit().putLong("checked", 0).commit()
+                prefs.edit().putLong("checked", 0).remove("check-attempt").remove("check-failed").commit()
                 mutable.value = mutable.value.copy(photos = emptyList(), checked = 0,
                     message = "Allow photos and original photo metadata to check or upload Camera backups.")
                 false
@@ -232,6 +257,7 @@ class CameraBackup(private val context: Context) {
             mutable.value = mutable.value.copy(message = "Configure the Camera backup server in Settings")
             return
         }
+        prefs.edit().putLong("check-attempt", now()).putBoolean("check-failed", true).commit()
         photos = photos.mapIndexed { index, photo ->
             currentCoroutineContext().ensureActive()
             if (index % 25 == 0 || index == photos.lastIndex) mutable.value = mutable.value.copy(message = "Indexing photo ${index + 1} of ${photos.size}")
@@ -243,10 +269,10 @@ class CameraBackup(private val context: Context) {
         // Commit a complete comparison, never mark unchecked batches as missing on failure.
         db.beginTransaction()
         try { checked.forEach(::persist); db.setTransactionSuccessful() } finally { db.endTransaction() }
-        val now = System.currentTimeMillis()
-        prefs.edit().putLong("checked", now).commit()
-        mutable.value = mutable.value.copy(photos = checked, checked = now,
-            message = "${checked.count { it.status == "synced" }} backed up · ${checked.count { it.status == "missing" }} pending · ${checked.count { it.status == "conflict" }} conflicts")
+        val completed = now()
+        prefs.edit().putLong("checked", completed).putBoolean("check-failed", false).commit()
+        mutable.value = mutable.value.copy(photos = checked, checked = completed,
+            message = summary(checked))
     }
 
     private fun request(path: String) = Request.Builder().url(mutable.value.url + path)
