@@ -14,6 +14,7 @@ services:
       CAMERA_STORAGE_ROOT: /photos
       CAMERA_MOUNT_ROOT: /photos
       CAMERA_INDEX_PATH: /state/inventory.sqlite3
+      CAMERA_COPY_PATHS: ${CAMERA_COPY_PATHS:-[]}
       CAMERA_TOKEN: ${CAMERA_TOKEN:?Set CAMERA_TOKEN in .env}
       CAMERA_HOST: 0.0.0.0
       CAMERA_PORT: "8787"
@@ -21,6 +22,11 @@ services:
       - type: bind
         source: ${CAMERA_ARCHIVE_PATH:?Set CAMERA_ARCHIVE_PATH in .env}
         target: /photos
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CAMERA_IMPORT_PATH:?Set CAMERA_IMPORT_PATH in .env}
+        target: /photoprism-import
         bind:
           create_host_path: false
       - type: bind

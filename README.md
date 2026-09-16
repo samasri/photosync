@@ -84,7 +84,8 @@ scrollbar jumps by month and year. Videos are not included.
 - Automatic upload is **off by default**. Camera reuses saved results until the
   configured interval expires; **Check now** always forces a comparison. Neither uploads.
 - Scheduled checks default to hourly; they upload only when automatic mode is enabled.
-- Original bytes and filenames are preserved in a flat server folder. Original-photo
+- Original bytes and filenames are preserved in a flat server folder. The server
+  can also deliver each upload to additional folders, such as PhotoPrism import. Original-photo
   metadata permission is required for accurate comparisons.
 - Identical contents anywhere in the archive count as backed up. Same-name files
   with different contents require **Keep** or confirmed **Replace**; bulk/automatic
