@@ -16,6 +16,12 @@ services:
       CAMERA_INDEX_PATH: /state/inventory.sqlite3
       CAMERA_COPY_PATHS: ${CAMERA_COPY_PATHS:-[]}
       CAMERA_TOKEN: ${CAMERA_TOKEN:?Set CAMERA_TOKEN in .env}
+      WHATSAPP_IMAGES_STORAGE_ROOT: /whatsapp-images
+      WHATSAPP_IMAGES_MOUNT_ROOT: /whatsapp-images
+      WHATSAPP_IMAGES_INDEX_PATH: /state/whatsapp-images.sqlite3
+      WHATSAPP_VIDEOS_STORAGE_ROOT: /whatsapp-videos
+      WHATSAPP_VIDEOS_MOUNT_ROOT: /whatsapp-videos
+      WHATSAPP_VIDEOS_INDEX_PATH: /state/whatsapp-videos.sqlite3
       CAMERA_HOST: 0.0.0.0
       CAMERA_PORT: "8787"
     volumes:
@@ -32,6 +38,16 @@ services:
       - type: bind
         source: ./services/camera/state
         target: /state
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WHATSAPP_IMAGES_ARCHIVE_PATH:?Set WHATSAPP_IMAGES_ARCHIVE_PATH in .env}
+        target: /whatsapp-images
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${WHATSAPP_VIDEOS_ARCHIVE_PATH:?Set WHATSAPP_VIDEOS_ARCHIVE_PATH in .env}
+        target: /whatsapp-videos
         bind:
           create_host_path: false
     expose:

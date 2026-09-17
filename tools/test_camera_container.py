@@ -35,6 +35,8 @@ def main():
         archive, imports, state = [root / part for part in ('archive', 'import', 'state')]
         for folder in (archive, imports, state):
             folder.mkdir()
+        images, videos = root / 'whatsapp-images', root / 'whatsapp-videos'
+        images.mkdir(); videos.mkdir()
         started = False
         try:
             docker('run', '-d', '--name', name, '--read-only', '--tmpfs', '/tmp', '--cap-drop', 'ALL',
@@ -42,6 +44,14 @@ def main():
                    '--mount', f'type=bind,src={archive},dst=/photos',
                    '--mount', f'type=bind,src={imports},dst=/imports',
                    '--mount', f'type=bind,src={state},dst=/state',
+                   '--mount', f'type=bind,src={images},dst=/whatsapp-images',
+                   '--mount', f'type=bind,src={videos},dst=/whatsapp-videos',
+                   '-e', 'WHATSAPP_IMAGES_STORAGE_ROOT=/whatsapp-images',
+                   '-e', 'WHATSAPP_IMAGES_MOUNT_ROOT=/whatsapp-images',
+                   '-e', 'WHATSAPP_IMAGES_INDEX_PATH=/state/whatsapp-images.sqlite3',
+                   '-e', 'WHATSAPP_VIDEOS_STORAGE_ROOT=/whatsapp-videos',
+                   '-e', 'WHATSAPP_VIDEOS_MOUNT_ROOT=/whatsapp-videos',
+                   '-e', 'WHATSAPP_VIDEOS_INDEX_PATH=/state/whatsapp-videos.sqlite3',
                    '-e', 'CAMERA_STORAGE_ROOT=/photos', '-e', 'CAMERA_MOUNT_ROOT=/photos',
                    '-e', 'CAMERA_INDEX_PATH=/state/inventory.sqlite3', '-e', 'CAMERA_COPY_PATHS=["/imports"]',
                    '-e', 'CAMERA_HOST=0.0.0.0', '-e', 'CAMERA_TOKEN=synthetic-e2e-token', 'photosync-camera')
@@ -77,6 +87,18 @@ def main():
                 assert code == 200
                 return checked['items'][0]['status']
             ready()
+            for collection, folder, filename, data in (
+                ('whatsapp-images', images, 'Sent/synthetic.png', png((1, 2, 3))),
+                ('whatsapp-videos', videos, 'Sent/synthetic.mp4', b'synthetic video bytes')):
+                headers = {'X-Backup-Collection': collection}
+                code, refreshed = request('POST', '/v1/refresh', '{}', headers)
+                assert code == 200 and refreshed['collection'] == collection
+                assert request('PUT', '/v1/files/' + filename, data,
+                    {**headers, 'X-Content-SHA256': hashlib.sha256(data).hexdigest()})[0] == 201
+                assert (folder / filename).read_bytes() == data
+                assert not (archive / filename).exists() and not (imports / filename).exists()
+                assert request('PUT', '/v1/files/../escape.png', data,
+                    {**headers, 'X-Content-SHA256': hashlib.sha256(data).hexdigest()})[0] == 400
             first, second = png((20, 80, 140)), png((140, 80, 20))
             assert status('synthetic.png', first) == 'missing'
             assert put('synthetic.png', first) == 201

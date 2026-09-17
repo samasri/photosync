@@ -7,12 +7,16 @@ provide the wiring.
 
 ## State boundaries
 
-WhatsApp owns its DataStore settings, Room history, durable queue and swipe state.
+PhotoPrism Backup owns its DataStore settings, Room history, durable queue and swipe state.
 Camera owns `camera-backup` preferences, `camera-index.db` and the
-`camera-backup-periodic` WorkManager job. Keep them independent: WhatsApp checkmarks
-reflect local upload history; Camera reflects the last complete server comparison.
+`camera-backup-periodic` WorkManager job. WhatsApp image/video backups use the same
+engine with separate collection IDs, preferences, indexes and WorkManager jobs.
+Camera keeps its existing names and index format. New collections inherit its
+connection settings but never its automatic-upload toggle. Keep the workflows
+independent: PhotoPrism checkmarks reflect local upload history; Backup checkmarks
+reflect the last complete comparison of that collection with its archive.
 
-Camera checks on resume only when the configured interval has elapsed; **Check now**
+Each backup collection checks on resume only when the configured interval has elapsed; **Check now**
 forces a comparison. Resume and periodic work share a persisted last-attempt time
 (also throttling failures), while last-checked records successful comparisons.
 Fresh results reload from the local index after restart; new local photos remain
@@ -21,10 +25,10 @@ the interval guard. Only periodic work with automatic mode enabled uploads after
 and never from a failed comparison. Automatic mode defaults off.
 Network errors retain prior results; changing servers invalidates comparison status.
 
-Both Camera hashing and uploading must use `MediaStore.setRequireOriginal` with
-runtime `ACCESS_MEDIA_LOCATION` and photo-read permission. Ordinary MediaStore
+Both backup hashing and uploading must use `MediaStore.setRequireOriginal` with
+runtime `ACCESS_MEDIA_LOCATION` and the collection’s image/video read permission. Ordinary MediaStore
 streams can redact EXIF and cause false conflicts against identical archive files.
-Never fall back to redacted bytes; denial stops Camera operations.
+Never fall back to redacted bytes; denial stops backup operations.
 
 Fingerprints cache MediaStore identity/version, size, dates and generation. The
 `fingerprint-version` preference invalidates hashes, statuses and conflict decisions
@@ -33,7 +37,7 @@ See [Android media documentation](https://developer.android.com/training/data-st
 
 ## WhatsApp grid
 
-The WhatsApp tab queries matching MediaStore buckets directly. It reads lightweight
+The PhotoPrism Backup tab queries matching MediaStore buckets directly. It reads lightweight
 metadata once, then parses dates, sorts and groups on a background dispatcher. The
 grid exposes 90 photos at a time and prefetches the next batch near the end; Coil
 loads thumbnails only for composed tiles. Selection and uploads use the full metadata
@@ -41,8 +45,8 @@ index, so **Select All** includes photos beyond the visible batches. The date sc
 maps the full index to grid positions (including day headers), exposes metadata
 through the target, then waits for layout before scrolling. It never decodes all
 the photos between the old and new positions. Album photo grids share this scrubber.
-Camera uses the same control in **All photos**, with a background date index based
-on MediaStore `date_added` (matching its grid order). Collections of 90 photos or
+Backup collections use the same control in **All photos**, with a background date index based
+on MediaStore `date_added` (matching the grid order). Collections of 90 photos or
 fewer omit the control.
 
 ## Updates and tests
@@ -55,7 +59,7 @@ Install with the same signing key/application ID and `adb install -r`; never uni
 the main app as an update step. Verify state preservation before changing settings.
 
 The `experiment` APK installs separately as `com.photoprism.uploader.cameralab`.
-It uses private synthetic files, removes media permissions, and limits Camera servers
+It uses private synthetic files, removes media permissions, and limits backup servers
 to loopback. Never point test receivers at a personal archive.
 
 ```sh

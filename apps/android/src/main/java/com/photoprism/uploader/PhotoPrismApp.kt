@@ -15,6 +15,6 @@ class PhotoPrismApp : Application() {
         super.onCreate()
         appModule = AppModule(this)
         appModule.uploadScheduler.ensureHourlyRetry()
-        appModule.cameraBackup.schedule()
+        appModule.backups.values.forEach { it.schedule() }
     }
 }

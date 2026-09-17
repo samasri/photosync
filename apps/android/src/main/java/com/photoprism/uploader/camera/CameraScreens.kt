@@ -30,7 +30,7 @@ import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CameraScreen(backup: CameraBackup, onView: (CameraPhoto) -> Unit) {
+fun CameraScreen(backup: CameraBackup, onBack: (() -> Unit)? = null, onView: (CameraPhoto) -> Unit) {
     val state by backup.state.collectAsState()
     var pending by rememberSaveable { mutableStateOf(false) }
     var replace by remember { mutableStateOf<CameraPhoto?>(null) }
@@ -52,19 +52,21 @@ fun CameraScreen(backup: CameraBackup, onView: (CameraPhoto) -> Unit) {
     }
     replace?.let { photo ->
         AlertDialog(onDismissRequest = { replace = null }, title = { Text("Replace server copy?") },
-            text = { Text("${photo.name}\nThe existing server photo will be overwritten with this phone photo.") },
+            text = { Text("${photo.name}\nThe existing server file will be overwritten with this phone file.") },
             confirmButton = { TextButton(onClick = { backup.uploadOne(photo, true); replace = null }) { Text("Replace server copy") } },
             dismissButton = { TextButton(onClick = { replace = null }) { Text("Cancel") } })
     }
-    Scaffold(topBar = { TopAppBar(title = { Text("Camera") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(backup.collection.title) }, navigationIcon = {
+        if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+    }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(if (state.automatic) "Automatic upload on" else "Automatic upload off")
                 Text(state.message, style = MaterialTheme.typography.bodySmall)
                 Text(if (state.checked == 0L) "Not checked yet" else "Last checked: ${DateFormat.getDateTimeInstance().format(Date(state.checked))}", style = MaterialTheme.typography.bodySmall)
                 if (!photoAccess) {
-                    Text("Camera backup needs access to all photos and their original metadata, including saved location tags, to compare and upload unchanged files. This does not access your live location.", style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { permissionRequest.launch(backup.requiredPermissions()) }) { Text("Allow original photos") }
+                    Text("Backup needs access to media and its original metadata to compare and upload unchanged files. This does not access your live location.", style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = { permissionRequest.launch(backup.requiredPermissions()) }) { Text("Allow original media") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = backup::checkNow, enabled = photoAccess && !state.busy) { Text("Check now") }
@@ -74,7 +76,7 @@ fun CameraScreen(backup: CameraBackup, onView: (CameraPhoto) -> Unit) {
             }
             if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             TabRow(selectedTabIndex = if (pending) 1 else 0) {
-                Tab(selected = !pending, onClick = { pending = false }, text = { Text("All photos (${state.photos.size})") })
+                Tab(selected = !pending, onClick = { pending = false }, text = { Text("${if (backup.collection.video) "All videos" else "All photos"} (${state.photos.size})") })
                 Tab(selected = pending, onClick = { pending = true }, text = { Text("Pending uploads (${state.photos.count { it.status == "missing" || it.status == "conflict" }})") })
             }
             if (!pending) {
@@ -86,8 +88,7 @@ fun CameraScreen(backup: CameraBackup, onView: (CameraPhoto) -> Unit) {
                     items(photos, key = { it.uri.toString() }) { photo ->
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                AsyncImage(photo.uri, photo.name, contentScale = ContentScale.Crop,
-                                    modifier = Modifier.size(72.dp).clickable { onView(photo) })
+                                BackupThumbnail(photo, Modifier.size(72.dp).clickable { onView(photo) })
                                 Column(Modifier.padding(start = 12.dp).weight(1f)) {
                                     Text(photo.name, style = MaterialTheme.typography.titleSmall)
                                     if (photo.status == "conflict") Text(if (photo.kept) "Conflict · server copy kept" else "Same filename, different contents", color = MaterialTheme.colorScheme.error)
@@ -110,16 +111,17 @@ fun CameraScreen(backup: CameraBackup, onView: (CameraPhoto) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CameraSettingsScreen(backup: CameraBackup, onBack: () -> Unit) {
+fun CameraSettingsScreen(backup: CameraBackup, backups: List<CameraBackup> = listOf(backup), onBack: () -> Unit) {
     val state by backup.state.collectAsState()
     var url by rememberSaveable { mutableStateOf(state.url) }
     var token by remember { mutableStateOf(state.token) }
     var showToken by remember { mutableStateOf(false) }
-    var automatic by rememberSaveable { mutableStateOf(state.automatic) }
+    val automatic = remember { mutableStateMapOf<String, Boolean>().apply { backups.forEach { put(it.collection.id, it.state.value.automatic) } } }
+    val states = backups.map { it.state.collectAsState().value }
     var interval by rememberSaveable { mutableStateOf(state.interval) }
     var menu by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
-    Scaffold(topBar = { TopAppBar(title = { Text("Camera backup") }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(title = { Text("Backup") }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
     }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -133,10 +135,17 @@ fun CameraSettingsScreen(backup: CameraBackup, onBack: () -> Unit) {
                             if (showToken) "Hide token" else "Show token")
                     }
                 }, modifier = Modifier.fillMaxWidth()) }
-            item { Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("Automatic upload"); Text("Upload missing photos after scheduled checks", style = MaterialTheme.typography.bodySmall) }
-                Switch(checked = automatic, onCheckedChange = { automatic = it })
-            } }
+            item { Text("Automatic upload", style = MaterialTheme.typography.titleMedium) }
+            items(backups, key = { it.collection.id }) { source ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(source.collection.title)
+                        Text("Upload missing files after scheduled checks", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = automatic[source.collection.id] == true,
+                        onCheckedChange = { automatic[source.collection.id] = it })
+                }
+            }
             item {
                 Box {
                     OutlinedButton(onClick = { menu = true }) { Text("Check every $interval minutes") }
@@ -149,9 +158,9 @@ fun CameraSettingsScreen(backup: CameraBackup, onBack: () -> Unit) {
             item {
                 Button(onClick = {
                     showToken = false
-                    message = try { backup.saveSettings(url, token, automatic, interval); "Settings saved" }
+                    message = try { check(states.none { it.busy }); backups.forEach { it.saveSettings(url, token, automatic[it.collection.id] == true, interval) }; "Settings saved" }
                     catch (_: Exception) { "Check the server URL and wait for any running operation to finish" }
-                }, enabled = !state.busy) { Text("Save settings") }
+                }, enabled = states.none { it.busy }) { Text("Save settings") }
                 if (message.isNotEmpty()) Text(message)
             }
         }

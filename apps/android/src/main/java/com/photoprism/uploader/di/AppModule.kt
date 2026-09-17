@@ -19,6 +19,12 @@ class AppModule(private val context: Context, private val scheduleUploads: Boole
             com.photoprism.uploader.lab.SyntheticLibrary(context) else null
     }
     val cameraBackup by lazy { com.photoprism.uploader.camera.CameraBackup(context) }
+    val backups by lazy {
+        com.photoprism.uploader.camera.BackupCollection.entries.associateWith { collection ->
+            if (collection == com.photoprism.uploader.camera.BackupCollection.CAMERA) cameraBackup
+            else com.photoprism.uploader.camera.CameraBackup(context, collection)
+        }
+    }
     val reviewStore by lazy { com.photoprism.uploader.ui.review.ReviewStore(context) }
     val uploadScheduler by lazy { com.photoprism.uploader.work.UploadScheduler(context) }
     private val queueDatabase by lazy {

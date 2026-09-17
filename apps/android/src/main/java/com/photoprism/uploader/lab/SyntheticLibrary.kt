@@ -46,6 +46,13 @@ class SyntheticLibrary(context: Context) {
         return file
     }
 
+    @Synchronized fun backupFiles(bucket: String): List<File> {
+        seed()
+        require(bucket in listOf("camera", "whatsapp", "whatsapp-videos"))
+        val folder = File(root, bucket)
+        return if (folder.exists()) folder.walkTopDown().filter { it.isFile && !it.name.startsWith(".") }.toList() else emptyList()
+    }
+
     @Synchronized fun files(): List<File> {
         seed()
         return File(root, "camera").listFiles()?.filter { it.extension == "jpg" }?.sortedBy { it.name } ?: emptyList()

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -33,7 +34,7 @@ fun AppNavigation(appModule: AppModule) {
     }
     Scaffold(bottomBar = {
         if (route in listOf("albums", "whatsapp", "camera", "settings")) NavigationBar {
-            listOf(Triple("albums", "Albums", Icons.Default.PhotoLibrary), Triple("whatsapp", "WhatsApp", Icons.Default.Chat), Triple("camera", "Camera", Icons.Default.CameraAlt), Triple("settings", "Settings", Icons.Default.Settings)).forEach { (destination, label, icon) ->
+            listOf(Triple("albums", "Albums", Icons.Default.PhotoLibrary), Triple("whatsapp", "PhotoPrism Backup", Icons.Default.Chat), Triple("camera", "Backup", Icons.Default.CameraAlt), Triple("settings", "Settings", Icons.Default.Settings)).forEach { (destination, label, icon) ->
                 NavigationBarItem(selected = route == destination, onClick = {
                     nav.navigate(destination) { popUpTo("albums") { saveState = true }; launchSingleTop = true; restoreState = true }
                 }, icon = { Icon(icon, null) }, label = { Text(label) })
@@ -57,7 +58,24 @@ fun AppNavigation(appModule: AppModule) {
                     onReview = { nav.navigate("review") }, showBack = false)
             }
             composable("camera") {
-                CameraScreen(appModule.cameraBackup, onView = { view(it.uri.toString(), it.name) })
+                Scaffold(topBar = { TopAppBar(title = { Text("Backup") }) }) { inner ->
+                    Column(Modifier.padding(inner).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        BackupCollection.entries.forEach { collection ->
+                            OutlinedButton(onClick = { nav.navigate("backup/${collection.id}") }, modifier = Modifier.fillMaxWidth()) { Text(collection.title) }
+                        }
+                    }
+                }
+            }
+            composable("backup/{collection}") { back ->
+                val collection = BackupCollection.entries.first { it.id == back.arguments?.getString("collection") }
+                CameraScreen(appModule.backups.getValue(collection), onBack = { nav.popBackStack() }, onView = {
+                    if (it.video) nav.navigate("video_viewer/${Uri.encode(it.uri.toString())}/${Uri.encode(it.name)}")
+                    else view(it.uri.toString(), it.name)
+                })
+            }
+            composable("video_viewer/{uri}/{name}") { back ->
+                com.photoprism.uploader.ui.viewer.VideoViewerScreen(back.arguments?.getString("uri") ?: "",
+                    back.arguments?.getString("name") ?: "", onBack = { nav.popBackStack() })
             }
             composable("album_grid/{bucketId}/{albumName}/{browseOnly}", arguments = listOf(
                 navArgument("bucketId") { type = NavType.StringType }, navArgument("albumName") { type = NavType.StringType },
@@ -80,8 +98,8 @@ fun AppNavigation(appModule: AppModule) {
             composable("settings") {
                 Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { inner ->
                     Column(Modifier.padding(inner).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        OutlinedButton(onClick = { nav.navigate("whatsapp-settings") }, modifier = Modifier.fillMaxWidth()) { Text("WhatsApp backup") }
-                        OutlinedButton(onClick = { nav.navigate("camera-settings") }, modifier = Modifier.fillMaxWidth()) { Text("Camera backup") }
+                        OutlinedButton(onClick = { nav.navigate("whatsapp-settings") }, modifier = Modifier.fillMaxWidth().testTag("photoprism-settings")) { Text("PhotoPrism Backup") }
+                        OutlinedButton(onClick = { nav.navigate("camera-settings") }, modifier = Modifier.fillMaxWidth().testTag("backup-settings")) { Text("Backup") }
                     }
                 }
             }
@@ -89,7 +107,7 @@ fun AppNavigation(appModule: AppModule) {
                 val model: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory(appModule))
                 SettingsScreen(model, onBack = { nav.popBackStack() })
             }
-            composable("camera-settings") { CameraSettingsScreen(appModule.cameraBackup, onBack = { nav.popBackStack() }) }
+            composable("camera-settings") { CameraSettingsScreen(appModule.cameraBackup, appModule.backups.values.toList(), onBack = { nav.popBackStack() }) }
         }
     }
 }

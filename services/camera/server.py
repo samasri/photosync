@@ -40,6 +40,8 @@ def error_fields(error):
 
 HASH = re.compile(r"[0-9a-f]{64}")
 MAX_BYTES = 100 * 1024 * 1024
+VIDEO_SUFFIXES = {'.mp4', '.m4v', '.3gp', '.mov', '.mkv', '.webm', '.avi'}
+COLLECTIONS = {'camera', 'whatsapp-images', 'whatsapp-videos'}
 IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.heic', '.heif', '.webp', '.gif', '.dng', '.avif', '.bmp'}
 
 
@@ -184,7 +186,10 @@ class Deliveries:
 
 
 class Inventory:
-    def __init__(self, root, database, mount=None):
+    def __init__(self, root, database, mount=None, collection="camera"):
+        self.collection = collection
+        self.suffixes = VIDEO_SUFFIXES if collection == "whatsapp-videos" else IMAGE_SUFFIXES
+        self.max_bytes = 4 * 1024 ** 3 if collection == "whatsapp-videos" else MAX_BYTES
         self.root = root
         self.mount = Path(mount).resolve() if mount else None
         if self.mount and (not self.mount.is_mount() or not root.is_relative_to(self.mount)):
@@ -218,7 +223,7 @@ class Inventory:
                     dirs[:] = [name for name in dirs if not name.startswith('.') and not (Path(directory) / name).is_symlink()]
                     for name in files:
                         path = Path(directory) / name
-                        if name.startswith('.') or path.suffix.lower() not in IMAGE_SUFFIXES or path.is_symlink():
+                        if name.startswith('.') or path.suffix.lower() not in self.suffixes or path.is_symlink():
                             continue
                         relative = path.relative_to(self.root).as_posix()
                         stat = path.stat()
@@ -242,9 +247,9 @@ class Inventory:
                 self.generation += 1
             except Exception as error:
                 self.db.rollback()
-                event('index_failed', duration_ms=round((time.monotonic() - started) * 1000), **error_fields(error))
+                event('index_failed', collection=self.collection, duration_ms=round((time.monotonic() - started) * 1000), **error_fields(error))
                 raise
-            event('index_refreshed', generation=self.generation, full=full, photos=len(seen),
+            event('index_refreshed', collection=self.collection, generation=self.generation, full=full, photos=len(seen),
                   hashed=hashed, reused=reused, hashed_bytes=hashed_bytes,
                   removed=len(previous.keys() - seen), duration_ms=round((time.monotonic() - started) * 1000))
             return self.generation
@@ -255,9 +260,11 @@ class Inventory:
             results = []
             for item in items:
                 name, sha = item['name'], item['sha256']
-                if not valid_name(name) or not HASH.fullmatch(sha):
+                if not valid_path(name, self.collection) or not isinstance(sha, str) or not HASH.fullmatch(sha):
                     raise ValueError('Invalid image')
                 same = self.db.execute('SELECT path FROM files WHERE hash=? LIMIT 1', (sha,)).fetchone()
+                if self.collection != 'camera':
+                    same = self.db.execute('SELECT path FROM files WHERE path=? AND hash=?', (name, sha)).fetchone()
                 target = self.root / name
                 existing = self.db.execute('SELECT hash FROM files WHERE path=?', (name,)).fetchone()
                 if same:
@@ -277,7 +284,27 @@ def valid_name(name):
             and '/' not in name and '\\' not in name and not any(ord(c) < 32 for c in name))
 
 
-def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=None, destinations=None):
+def valid_path(name, collection):
+    if not isinstance(name, str):
+        return False
+    parts = name.split('/')
+    return (len(name.encode('utf-8')) <= 1024 and
+            (collection != 'camera' or len(parts) == 1) and all(valid_name(part) for part in parts))
+
+
+def safe_parent(root, name, create=False):
+    """Reject symlink ancestors, including pre-existing archive subdirectories."""
+    parent = root
+    for part in name.split('/')[:-1]:
+        parent = parent / part
+        if parent.is_symlink() or (parent.exists() and not parent.is_dir()):
+            raise OSError('Unsafe backup directory')
+        if create:
+            parent.mkdir(exist_ok=True)
+    return parent
+
+
+def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=None, destinations=None, collections=None):
     root = Path(root).resolve()
     if not token:
         raise ValueError('CAMERA_TOKEN is required')
@@ -288,6 +315,25 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
         inventory.deliveries = Deliveries(inventory, destinations or [])
     except Exception:
         inventory.db.close()
+        raise
+
+    inventories = {'camera': inventory}
+    try:
+        for collection, config in (collections or {}).items():
+            if collection not in COLLECTIONS - {'camera'}:
+                raise ValueError('Unknown backup collection')
+            folder = Path(config['root']).resolve()
+            if not folder.is_dir():
+                raise ValueError('Backup collection directory is unavailable')
+            other = Inventory(folder, config['database'], config.get('mount'), collection)
+            inventories[collection] = other
+            other.deliveries = Deliveries(other, [])
+        roots = [i.root for i in inventories.values()] + inventory.deliveries.roots
+        if len(set(roots)) != len(roots) or any(a != b and a.is_relative_to(b) for a in roots for b in roots):
+            raise ValueError('Backup collection roots must be separate')
+    except Exception:
+        for current in inventories.values():
+            current.db.close()
         raise
 
     class Handler(BaseHTTPRequestHandler):
@@ -320,7 +366,7 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                 method = getattr(self, 'command', '')
                 method = method if method in ('GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH') else 'unknown'
                 # Healthy probes are deliberately quiet; failures always get a record.
-                if self.response_code is not None and not (route == '/health' and self.response_code == 200 and not self.diagnostics):
+                if self.response_code is not None and not (route == '/health' and self.response_code == 200 and set(self.diagnostics) <= {'collection'}):
                     event('request', request_id=self.request_id, method=method, route=route,
                           status=self.response_code, duration_ms=round((time.monotonic() - started) * 1000),
                           **self.diagnostics)
@@ -351,8 +397,14 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
             if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + token):
                 self.failure(401, 'unauthorized')
                 return False
+            collection = self.headers.get('X-Backup-Collection', 'camera')
+            if collection not in inventories:
+                self.failure(404, 'unknown_collection')
+                return False
+            self.inventory = inventories[collection]
+            self.diagnostics['collection'] = collection
             try:
-                inventory.available()
+                self.inventory.available()
             except OSError as error:
                 self.failure(503, 'storage_unavailable', error)
                 return False
@@ -370,8 +422,10 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                 return
             try:
                 if self.path == '/health':
-                    for index in range(len(inventory.deliveries.roots)):
-                        inventory.deliveries.available(index)
+                    for current in inventories.values():
+                        current.available()
+                        for index in range(len(current.deliveries.roots)):
+                            current.deliveries.available(index)
                 self.respond(200 if self.path == '/health' else 404)
             except OSError as error:
                 self.failure(503, 'copy_storage_unavailable', error)
@@ -382,16 +436,16 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
             try:
                 body = self.read_json()
                 if self.path == '/v1/refresh':
-                    self.respond(200, {'generation': inventory.refresh()})
+                    self.respond(200, {'generation': self.inventory.refresh(), 'collection': self.inventory.collection})
                 elif self.path == '/v1/check':
                     items = body['items']
                     if not isinstance(items, list) or len(items) > 500:
                         raise ValueError('Invalid batch')
-                    with inventory.lock:
-                        if body.get('generation') != inventory.generation or inventory.generation == 0:
+                    with self.inventory.lock:
+                        if body.get('generation') != self.inventory.generation or self.inventory.generation == 0:
                             return self.failure(409, 'stale_generation', body={'error': 'Refresh inventory first'})
-                        results = inventory.compare(items)
-                        self.diagnostics.update(batch_size=len(results), generation=inventory.generation,
+                        results = self.inventory.compare(items)
+                        self.diagnostics.update(batch_size=len(results), generation=self.inventory.generation,
                             **{status: sum(row['status'] == status for row in results) for status in ('synced', 'missing', 'conflict')})
                         self.respond(200, {'items': results})
                 else:
@@ -404,8 +458,8 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
         # Retain the synthetic prototype protocol for its isolation/regression tests.
         def object_target(self):
             parts = self.path.split('/')
-            if len(parts) == 4 and parts[1:3] == ['v1', 'objects'] and HASH.fullmatch(parts[3]):
-                return root / parts[3]
+            if self.inventory.collection == 'camera' and len(parts) == 4 and parts[1:3] == ['v1', 'objects'] and HASH.fullmatch(parts[3]):
+                return self.inventory.root / parts[3]
             return None
 
         def do_HEAD(self):
@@ -426,19 +480,19 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
             sha = legacy.name if legacy else self.headers.get('X-Content-SHA256', '')
             if self.path.startswith('/v1/objects/') and legacy is None:
                 return self.respond(404)
-            if not legacy and (not self.path.startswith('/v1/files/') or not valid_name(name)
-                               or Path(name).suffix.lower() not in IMAGE_SUFFIXES):
+            if not legacy and (not self.path.startswith('/v1/files/') or not valid_path(name, self.inventory.collection)
+                               or Path(name).suffix.lower() not in self.inventory.suffixes):
                 return self.respond(400)
             if not HASH.fullmatch(sha):
                 return self.respond(400)
-            target = legacy or root / name
+            target = legacy or self.inventory.root / name
             temporary = None
             try:
                 size = int(self.headers.get('Content-Length', '-1'))
-                if self.headers.get('Transfer-Encoding') or not 0 < size <= MAX_BYTES:
+                if self.headers.get('Transfer-Encoding') or not 0 < size <= self.inventory.max_bytes:
                     return self.failure(413, 'invalid_upload_size')
                 self.diagnostics['bytes'] = size
-                with tempfile.NamedTemporaryFile(dir=root, prefix='.incoming-', delete=False) as out:
+                with tempfile.NamedTemporaryFile(dir=self.inventory.root, prefix='.incoming-', delete=False) as out:
                     temporary = Path(out.name)
                     remaining, digest = size, hashlib.sha256()
                     while remaining:
@@ -452,16 +506,18 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                     os.fsync(out.fileno())
                 if digest.hexdigest() != sha:
                     return self.failure(422, 'content_hash_mismatch')
-                with inventory.lock:
-                    inventory.available()
+                with self.inventory.lock:
+                    self.inventory.available()
+                    if not legacy:
+                        safe_parent(self.inventory.root, name, create=True)
                     if target.is_symlink() or (target.exists() and not target.is_file()):
                         return self.failure(409, 'destination_conflict')
                     current = digest_file(target) if target.exists() else None
                     if current == sha:
                         if not legacy:
-                            inventory.deliveries.begin(name, sha, None)
-                            inventory.deliveries.deliver(name, sha, self.diagnostics)
-                            inventory.generation += 1
+                            self.inventory.deliveries.begin(name, sha, None)
+                            self.inventory.deliveries.deliver(name, sha, self.diagnostics)
+                            self.inventory.generation += 1
                         self.diagnostics['outcome'] = 'already_present'
                         return self.respond(201, {'sha256': sha})
                     if not legacy and current is not None and self.headers.get('X-Replace-SHA256') != current:
@@ -469,7 +525,7 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                     if not legacy and current is None and self.headers.get('X-Replace-SHA256'):
                         return self.failure(409, 'replacement_target_missing', body={'error': 'Server copy changed; check again'})
                     if not legacy:
-                        inventory.deliveries.begin(name, sha, current, reset=True)
+                        self.inventory.deliveries.begin(name, sha, current, reset=True)
                     if current is None:
                         # Serialize uploads, preserving an existing destination.
                         try:
@@ -480,18 +536,18 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                         os.replace(temporary, target)
                     self.diagnostics['outcome'] = 'created' if current is None else 'replaced'
                     temporary = None  # A successful rename consumed the temporary path.
-                    directory = os.open(root, os.O_RDONLY)
+                    directory = os.open(target.parent, os.O_RDONLY)
                     try:
                         os.fsync(directory)
                     finally:
                         os.close(directory)
                     if not legacy:
                         stat = target.stat()
-                        inventory.db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)',
+                        self.inventory.db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)',
                             (name, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, sha))
-                        inventory.db.commit()
-                        inventory.generation += 1
-                        inventory.deliveries.deliver(name, sha, self.diagnostics)
+                        self.inventory.db.commit()
+                        self.inventory.generation += 1
+                        self.inventory.deliveries.deliver(name, sha, self.diagnostics)
                 self.respond(201, {'sha256': sha})
             except ValueError as error:
                 self.failure(400, 'invalid_upload', error)
@@ -506,6 +562,7 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
 
     server = ThreadingHTTPServer((host, port), Handler)
     server.inventory = inventory
+    server.inventories = inventories
     return server
 
 
@@ -514,11 +571,17 @@ if __name__ == '__main__':
     root = os.environ.get('CAMERA_STORAGE_ROOT')
     if not root:
         raise SystemExit('Set CAMERA_STORAGE_ROOT and CAMERA_TOKEN in services/camera/.env')
+    collections = {}
+    for collection, prefix in [('whatsapp-images', 'WHATSAPP_IMAGES'), ('whatsapp-videos', 'WHATSAPP_VIDEOS')]:
+        folder = os.environ.get(prefix + '_STORAGE_ROOT')
+        if folder:
+            collections[collection] = {'root': folder, 'database': os.environ[prefix + '_INDEX_PATH'],
+                                       'mount': os.environ.get(prefix + '_MOUNT_ROOT')}
     server = make_server(root, os.environ.get('CAMERA_TOKEN'),
                          os.environ.get('CAMERA_HOST', '127.0.0.1'),
                          int(os.environ.get('CAMERA_PORT', '8787')),
                          os.environ.get('CAMERA_INDEX_PATH'), os.environ.get('CAMERA_MOUNT_ROOT'),
-                         copy_paths(os.environ.get('CAMERA_COPY_PATHS', '[]')))
+                         copy_paths(os.environ.get('CAMERA_COPY_PATHS', '[]')), collections)
     logging.basicConfig(level=logging.INFO, format='%(message)s', stream=sys.stdout)
     event('server_ready', port=server.server_address[1])
     server.serve_forever()

@@ -48,7 +48,7 @@ class ProductScreenshotsTest {
             output.outputStream().use { compose.onRoot().captureToImage().asAndroidBitmap().compress(Bitmap.CompressFormat.PNG, 100, it) }
         }
         capture("albums")
-        compose.onNodeWithText("WhatsApp").performClick()
+        compose.onNodeWithText("PhotoPrism Backup").performClick()
         compose.waitUntil(15000) { compose.onAllNodesWithContentDescription("Synced").fetchSemanticsNodes().size == 6 }
         // Grid tiles expose click/long-click semantics; choose unsynced items without uploading.
         val tiles = compose.onAllNodes(SemanticsMatcher("photo tile") { it.config.contains(androidx.compose.ui.semantics.SemanticsActions.OnLongClick) })
@@ -57,6 +57,8 @@ class ProductScreenshotsTest {
         tiles[3].performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithText("Selected: 2").fetchSemanticsNodes().isNotEmpty() }
         capture("whatsapp")
+        compose.onNodeWithText("Backup").performClick()
+        capture("backup")
         compose.onNodeWithText("Camera").performClick()
         compose.onNodeWithText("All photos (12)").assertExists()
         compose.onNodeWithText("Pending uploads (5)").assertExists()

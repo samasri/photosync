@@ -47,7 +47,7 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
         }
     }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("WhatsApp backup") }, navigationIcon = {
+        TopAppBar(title = { Text("PhotoPrism Backup") }, navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
         })
     }, snackbarHost = { SnackbarHost(snackbar) }) { padding ->

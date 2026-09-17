@@ -19,7 +19,7 @@ From the repository root:
 3. Ensure the gateway's external network `internal-proxy` exists.
 4. Run `docker compose up -d --build`.
 5. Configure the gateway's HTTPS route to `photosync-camera:8787`. Enter the public
-   URL/token in the app's **Settings → Camera backup**.
+   URL/token in the app's **Settings → Backup**.
 
 No host port is published. The archive mounts at `/photos`, and the private index at
 `/state/inventory.sqlite3`. Missing source paths are not created. The authenticated
@@ -151,3 +151,46 @@ and log privacy, then removes its test container and directories.
 
 Legacy `/v1/objects/{hash}`, `run_lab.py` and `lab_webdav.py` remain only for prototype
 regression; production uses `/v1/files/`.
+
+## Backup collections
+
+The same service also supports `whatsapp-images` and `whatsapp-videos`. Requests
+select a collection with `X-Backup-Collection`; omission selects Camera for older
+clients. Unknown or unconfigured collections return 404. Refresh responses echo
+the collection, so new clients refuse to use an older server for WhatsApp backups.
+Each collection has its own archive, SQLite index, generation counter and lock.
+Camera's existing index and delivery receipts are retained without migration.
+
+Compose mounts `WHATSAPP_IMAGES_ARCHIVE_PATH` and `WHATSAPP_VIDEOS_ARCHIVE_PATH`
+into separate directories. Configure both before rebuilding/restarting the service.
+For direct execution, see the optional collection variables in `.env.example`.
+Health checks cover every configured archive. A failure in one collection does not
+redirect requests to another collection or its PhotoPrism delivery folder.
+
+WhatsApp paths are relative to their respective phone media folders, including
+subfolders such as `Sent`. A backup requires the same relative path and SHA-256;
+Camera retains its existing content-anywhere comparison. Traversal, hidden path
+components and symlink upload ancestors are rejected. As with the existing flat
+archive, external concurrent writers must not replace directories during uploads.
+Phone deletions never remove server files. Replacements remain conditional on the
+previous server hash and require confirmation in the app.
+
+Images retain the 100 MiB request limit. WhatsApp video uploads stream up to 4 GiB
+per file. Android permits a 60-minute request with a 10-minute write timeout; the
+server times out stalled sockets after 60 seconds. Configure any reverse proxy to
+allow the intended file size and duration. An interrupted upload stays pending;
+retry restarts that file rather than resuming a partial byte range.
+
+The Android Backup settings page shares one server/token and check interval across
+collections, with separate automatic-upload switches. New WhatsApp collections
+inherit the Camera connection configuration but start with automatic upload off.
+Each collection keeps independent local status, check timestamps and scheduled work.
+PhotoPrism selection/history/credentials remain separate. Only MediaStore-visible,
+non-pending, non-trashed media is included; hidden folders excluded by Android's
+media index are not a full filesystem rsync replacement.
+
+Run `python3 -m unittest discover -s services/camera -q` and, after building the
+container, `python3 tools/test_camera_container.py`. Both use synthetic destinations.
+Android's `BackupCollectionsTest` checks collection isolation and old-server refusal;
+its opt-in `syntheticBackupUrl` test requires a fresh synthetic service reachable
+through ADB reverse with token `synthetic-e2e`. Never point it at production.

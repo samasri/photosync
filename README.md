@@ -1,8 +1,8 @@
 # PhotoSync
 
 Browse your Android photo library and back up chosen photos to your own servers.
-**Albums** is browse-only; **WhatsApp** offers selection and swipe review;
-**Camera** compares your camera roll with an existing archive.
+**Albums** is browse-only; **PhotoPrism Backup** offers selective WhatsApp image uploads;
+**Backup** archives Camera photos, WhatsApp images, and WhatsApp videos.
 Each backup workflow has independent settings, credentials and state.
 
 ## Features
@@ -12,7 +12,7 @@ Each backup workflow has independent settings, credentials and state.
 
 Explore the phone's photo albums with cover images and counts. Open an album,
 then tap a photo to view it and pinch or double-tap to zoom. Albums is browse-only;
-use the WhatsApp or Camera tab to upload. In larger albums, drag the right-edge
+use PhotoPrism Backup or Backup to upload. In larger albums, drag the right-edge
 scrollbar to jump by month and year.
 
 <img src="docs/screenshots/albums.png" width="360" alt="Albums tab showing WhatsApp and Camera albums" />
@@ -44,7 +44,7 @@ On first review, existing photos dated before January 1, 2026 are skipped; older
 photos imported later still appear and the grid allows manual selection at any time.
 
 Queued photos are saved privately and retried when connected, roughly hourly subject
-to Android scheduling. **Settings → WhatsApp backup** shows pending uploads and retry
+to Android scheduling. **Settings → PhotoPrism Backup** shows pending uploads and retry
 controls. Avoid clearing app storage while uploads are pending.
 
 <img src="docs/screenshots/whatsapp.png" width="360" alt="WhatsApp tab with older photos synced, two newer photos selected for upload, and the newest unselected" />
@@ -75,24 +75,28 @@ Left to right, top to bottom:
 </details>
 
 <details>
-<summary><strong>Back up your Camera roll</strong></summary>
+<summary><strong>Back up Camera and WhatsApp media</strong></summary>
 
-See images in `DCIM/Camera/`, synced checkmarks, and pending filenames. Upload
-individually or choose **Upload all**. In larger camera rolls, the **All photos**
-scrollbar jumps by month and year. Videos are not included.
+Open **Backup**, then choose **Camera**, **WhatsApp images**, or **WhatsApp videos**.
+See synced checkmarks and pending filenames; upload individually or choose **Upload all**.
+The date scrollbar jumps by month and year. Photos support zoom; videos open a player.
+Camera includes images in `DCIM/Camera/` only. WhatsApp backups preserve subfolders.
 
-- Automatic upload is **off by default**. Camera reuses saved results until the
+- Automatic upload is **off by default** for each collection. Backup reuses saved results until the
   configured interval expires; **Check now** always forces a comparison. Neither uploads.
 - Scheduled checks default to hourly; they upload only when automatic mode is enabled.
-- Original bytes and filenames are preserved in a flat server folder. The server
-  can also deliver each upload to additional folders, such as PhotoPrism import. Original-photo
-  metadata permission is required for accurate comparisons.
-- Identical contents anywhere in the archive count as backed up. Same-name files
+- Camera uses a flat archive and can also deliver uploads to PhotoPrism import.
+  WhatsApp images and videos go to separate archives; selective PhotoPrism uploads
+  remain independent. Original media metadata permission keeps comparisons accurate.
+- Camera recognizes identical contents anywhere in its archive. WhatsApp requires
+  matching contents at the same relative path. Same-name files
   with different contents require **Keep** or confirmed **Replace**; bulk/automatic
   uploads skip conflicts. Replacement overwrites the old server copy.
 - Unreachable servers retain the last known status. Phone deletion never deletes a backup.
 
-<img src="docs/screenshots/camera.png" width="360" alt="Camera tab with All photos selected, seven synced photos and five pending uploads" />
+<img src="docs/screenshots/backup.png" width="360" alt="Backup collections: Camera, WhatsApp images, and WhatsApp videos" />
+
+<img src="docs/screenshots/camera.png" width="360" alt="Camera backup screen with All photos selected, seven synced photos and five pending uploads" />
 
 <details>
 <summary>Photo credits</summary>
@@ -131,8 +135,8 @@ adb install -r apps/android/build/outputs/apk/debug/app-debug.apk
 Back up an existing installation before updating. Keep its signing key and app ID,
 and use `install -r` to preserve state.
 
-In the **Settings** tab, configure **WhatsApp backup** with a PhotoPrism/WebDAV upload URL
-and login. For **Camera backup**, [deploy the Camera service](services/camera/README.md#deployment)
+In the **Settings** tab, configure **PhotoPrism Backup** with a PhotoPrism/WebDAV upload URL
+and login. For **Backup**, [deploy the Camera service](services/camera/README.md#deployment)
 using the root `.env.example` and Compose file, then enter its HTTPS URL and token.
 
 ## Development

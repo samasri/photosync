@@ -46,8 +46,12 @@ def seed():
         for index, number in enumerate(IDS, 1):
             for bucket, name in [('camera', f'CAMERA-{index:02}.jpg'),
                                  ('whatsapp', f'IMG-202609{12 if index <= 6 else 1:02}-WA{index:04}.jpg')]:
-                archive.add(WORK / 'stock' / f'{number}.jpg',
+                info = archive.gettarinfo(str(WORK / 'stock' / f'{number}.jpg'),
                             arcname=f'files/synthetic-library/{bucket}/{name}')
+                # Newest fixtures first; the server contains only the older seven.
+                info.mtime = 1789257600 - index * 86400
+                with (WORK / 'stock' / f'{number}.jpg').open('rb') as source:
+                    archive.addfile(info, source)
     subprocess.run(['adb', 'shell', 'run-as', PACKAGE, 'rm', '-rf', 'files/synthetic-library'], check=True)
     subprocess.run(['adb', 'exec-in', 'run-as', PACKAGE, 'tar', '-xf', '-'], input=data.getvalue(), check=True)
     subprocess.run(['adb', 'reverse', 'tcp:8791', 'tcp:8791'], check=True)
@@ -78,12 +82,12 @@ def serve():
 def pull():
     destination = REPO / 'docs' / 'screenshots'
     destination.mkdir(parents=True, exist_ok=True)
-    for name in ('albums', 'whatsapp', 'camera'):
+    for name in ('albums', 'whatsapp', 'camera', 'backup'):
         data = subprocess.check_output(['adb', 'exec-out', 'run-as', PACKAGE, 'cat', f'files/screenshots/{name}.png'])
         if not data.startswith(b'\x89PNG\r\n\x1a\n'):
             raise ValueError('Screenshot is not a PNG')
         (destination / f'{name}.png').write_bytes(data)
-    print('Saved three app-only screenshots; review them before committing.')
+    print('Saved app-only screenshots; review them before committing.')
 
 
 if __name__ == '__main__':

@@ -29,20 +29,26 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 
 data class CameraPhoto(val uri: Uri, val name: String, val size: Long, val stamp: String,
-    val hash: String = "", val status: String = "unchecked", val serverHash: String = "", val kept: Boolean = false, val dateAdded: Long = 0)
+    val hash: String = "", val status: String = "unchecked", val serverHash: String = "", val kept: Boolean = false, val dateAdded: Long = 0, val video: Boolean = false)
 data class CameraState(val photos: List<CameraPhoto> = emptyList(), val busy: Boolean = false,
     val message: String = "Not checked yet", val checked: Long = 0, val automatic: Boolean = false,
     val interval: Long = 60, val url: String = "", val token: String = "")
 
 /** Camera has its own settings, index and scheduling; it never uses the WhatsApp queue. */
-class CameraBackup(private val context: Context, private val now: () -> Long = System::currentTimeMillis) {
-    private val prefs = context.getSharedPreferences("camera-backup", Context.MODE_PRIVATE)
+class CameraBackup(private val context: Context, val collection: BackupCollection = BackupCollection.CAMERA, private val now: () -> Long = System::currentTimeMillis) {
+    private val prefs = context.getSharedPreferences("${collection.id}-backup", Context.MODE_PRIVATE)
     private val db by lazy {
-        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath("camera-index.db").also { it.parentFile?.mkdirs() }, null).apply {
+        SQLiteDatabase.openOrCreateDatabase(context.getDatabasePath("${collection.id}-index.db").also { it.parentFile?.mkdirs() }, null).apply {
             execSQL("CREATE TABLE IF NOT EXISTS photos (uri TEXT PRIMARY KEY, stamp TEXT, hash TEXT, status TEXT, server_hash TEXT, kept INTEGER)")
         }
     }
     private fun initial(): CameraState {
+        if (collection != BackupCollection.CAMERA && !prefs.contains("url")) {
+            val camera = context.getSharedPreferences("camera-backup", Context.MODE_PRIVATE)
+            prefs.edit().putString("url", camera.getString("url", ""))
+                .putString("token", camera.getString("token", ""))
+                .putLong("interval", camera.getLong("interval", 60)).putBoolean("automatic", false).commit()
+        }
         // Invalidate the old redacted-byte index independently of credentials and WhatsApp.
         if (prefs.getInt("fingerprint-version", 0) != 1) {
             db.delete("photos", null, null)
@@ -58,7 +64,7 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false)
         .connectTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.MINUTES)
-        .writeTimeout(2, TimeUnit.MINUTES).callTimeout(15, TimeUnit.MINUTES).build()
+        .writeTimeout(10, TimeUnit.MINUTES).callTimeout(60, TimeUnit.MINUTES).build()
 
     fun saveSettings(url: String, token: String, automatic: Boolean, interval: Long) {
         val normalized = url.trim().trimEnd('/')
@@ -86,11 +92,12 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
     fun schedule() {
         val manager = WorkManager.getInstance(context)
         if (mutable.value.url.isBlank() || mutable.value.token.isBlank()) {
-            manager.cancelUniqueWork("camera-backup-periodic")
+            manager.cancelUniqueWork("${collection.id}-backup-periodic")
             return
         }
-        manager.enqueueUniquePeriodicWork("camera-backup-periodic", ExistingPeriodicWorkPolicy.UPDATE,
+        manager.enqueueUniquePeriodicWork("${collection.id}-backup-periodic", ExistingPeriodicWorkPolicy.UPDATE,
             PeriodicWorkRequestBuilder<CameraBackupWorker>(mutable.value.interval, TimeUnit.MINUTES)
+                .setInputData(workDataOf("collection" to collection.id))
                 .setInitialDelay(mutable.value.interval, TimeUnit.MINUTES)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build())
     }
@@ -99,7 +106,7 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
         .digest((mutable.value.url + "\n" + mutable.value.token).toByteArray()).joinToString("") { "%02x".format(it) }
 
     fun requiredPermissions(): Array<String> = if (BuildConfig.BUILD_TYPE == "experiment") emptyArray() else arrayOf(
-        if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE,
+        if (Build.VERSION.SDK_INT >= 33) { if (collection.video) Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_MEDIA_IMAGES } else Manifest.permission.READ_EXTERNAL_STORAGE,
         Manifest.permission.ACCESS_MEDIA_LOCATION)
 
     fun hasPhotoAccess() = requiredPermissions().all { context.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
@@ -117,22 +124,22 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
         requirePhotoAccess()
         val photos = mutableListOf<CameraPhoto>()
         if (BuildConfig.BUILD_TYPE == "experiment") {
-            return SyntheticLibrary(context).files().map { file ->
-                cached(CameraPhoto(Uri.fromFile(file), file.name, file.length(), "${file.length()}:${file.lastModified()}", dateAdded = file.lastModified() / 1000))
+            return SyntheticLibrary(context).backupFiles(collection.syntheticFolder).map { file ->
+                cached(CameraPhoto(Uri.fromFile(file), file.relativeTo(java.io.File(context.filesDir, "synthetic-library/${collection.syntheticFolder}")).invariantSeparatorsPath, file.length(), "${file.length()}:${file.lastModified()}", dateAdded = file.lastModified() / 1000, video = collection.video))
             }
         }
-        val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        val mediaUri = if (collection.video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val volumeVersion = MediaStore.getVersion(context)
-        val columns = mutableListOf("_id", "_display_name", "_size", "date_modified", "date_added")
+        val columns = mutableListOf("_id", "_display_name", "_size", "date_modified", "date_added", "relative_path")
         if (android.os.Build.VERSION.SDK_INT >= 30) columns.add("generation_modified")
-        val selection = "relative_path = ? AND is_pending = 0" + if (android.os.Build.VERSION.SDK_INT >= 30) " AND is_trashed = 0" else ""
-        context.contentResolver.query(collection, columns.toTypedArray(), selection, arrayOf("DCIM/Camera/"), "date_added DESC")?.use { cursor ->
+        val selection = (if (collection == BackupCollection.CAMERA) "relative_path = ?" else "relative_path LIKE ?") + " AND is_pending = 0" + if (android.os.Build.VERSION.SDK_INT >= 30) " AND is_trashed = 0" else ""
+        context.contentResolver.query(mediaUri, columns.toTypedArray(), selection, arrayOf(collection.folder + if (collection == BackupCollection.CAMERA) "" else "%"), "date_added DESC")?.use { cursor ->
             while (cursor.moveToNext()) {
-                val uri = ContentUris.withAppendedId(collection, cursor.getLong(0))
-                val stamp = volumeVersion + ":" + (2 until columns.size).joinToString(":") { cursor.getString(it) ?: "0" }
-                photos.add(cached(CameraPhoto(uri, cursor.getString(1), cursor.getLong(2), stamp, dateAdded = cursor.getLong(4))))
+                val uri = ContentUris.withAppendedId(mediaUri, cursor.getLong(0))
+                val stamp = volumeVersion + ":" + (2 until columns.size).filter { it != 5 }.joinToString(":") { cursor.getString(it) ?: "0" }
+                photos.add(cached(CameraPhoto(uri, cursor.getString(5).removePrefix(collection.folder) + cursor.getString(1), cursor.getLong(2), stamp, dateAdded = cursor.getLong(4), video = collection.video)))
             }
-        } ?: error("Cannot read camera library")
+        } ?: error("Cannot read backup library")
         return photos
     }
 
@@ -241,7 +248,7 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
             } catch (_: SecurityException) {
                 prefs.edit().putLong("checked", 0).remove("check-attempt").remove("check-failed").commit()
                 mutable.value = mutable.value.copy(photos = emptyList(), checked = 0,
-                    message = "Allow photos and original photo metadata to check or upload Camera backups.")
+                    message = "Allow media and original metadata access to check or upload ${collection.title} backups.")
                 false
             } catch (_: Exception) {
                 mutable.value = mutable.value.copy(message = "Could not complete backup check or upload. Check photo permission, server address and connection. Last known status is retained.")
@@ -252,15 +259,15 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
 
     private suspend fun checkLocked() {
         var photos = scan()
-        mutable.value = mutable.value.copy(photos = photos, message = "Checking camera folder…")
+        mutable.value = mutable.value.copy(photos = photos, message = "Checking ${collection.title}…")
         if (mutable.value.url.isBlank() || mutable.value.token.isBlank()) {
-            mutable.value = mutable.value.copy(message = "Configure the Camera backup server in Settings")
+            mutable.value = mutable.value.copy(message = "Configure the Backup server in Settings")
             return
         }
         prefs.edit().putLong("check-attempt", now()).putBoolean("check-failed", true).commit()
         photos = photos.mapIndexed { index, photo ->
             currentCoroutineContext().ensureActive()
-            if (index % 25 == 0 || index == photos.lastIndex) mutable.value = mutable.value.copy(message = "Indexing photo ${index + 1} of ${photos.size}")
+            if (index % 25 == 0 || index == photos.lastIndex) mutable.value = mutable.value.copy(message = "Indexing file ${index + 1} of ${photos.size}")
             if (photo.hash.isNotEmpty()) photo else photo.copy(hash = fingerprint(photo)).also(::persist)
         }
         mutable.value = mutable.value.copy(message = "Checking server inventory…")
@@ -277,6 +284,7 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
 
     private fun request(path: String) = Request.Builder().url(mutable.value.url + path)
         .header("Authorization", "Bearer ${mutable.value.token}")
+        .header("X-Backup-Collection", collection.id)
     private fun post(path: String, body: JSONObject): JSONObject {
         val call = request(path).post(body.toString().toRequestBody("application/json".toMediaType())).build()
         return client.newCall(call).execute().use { response ->
@@ -285,7 +293,9 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
         }
     }
     private fun checkItems(photos: List<CameraPhoto>): List<CameraPhoto> {
-        val generation = post("/v1/refresh", JSONObject()).getLong("generation")
+        val refreshed = post("/v1/refresh", JSONObject())
+        check(collection == BackupCollection.CAMERA || refreshed.optString("collection") == collection.id) { "Update the backup server before using this collection" }
+        val generation = refreshed.getLong("generation")
         return photos.chunked(500).flatMap { batch ->
             val items = JSONArray()
             batch.forEach { items.put(JSONObject().put("name", it.name).put("sha256", it.hash)) }
@@ -324,8 +334,9 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
                 }
             }
         }
-        val url = mutable.value.url.toHttpUrl().newBuilder().addPathSegments("v1/files").addPathSegment(photo.name).build()
+        val url = mutable.value.url.toHttpUrl().newBuilder().addPathSegments("v1/files").apply { photo.name.split('/').forEach { addPathSegment(it) } }.build()
         val builder = Request.Builder().url(url).header("Authorization", "Bearer ${mutable.value.token}")
+        .header("X-Backup-Collection", collection.id)
             .header("X-Content-SHA256", photo.hash).put(body)
         if (replaceHash.isNotEmpty()) builder.header("X-Replace-SHA256", replaceHash)
         client.newCall(builder.build()).execute().use {
@@ -348,7 +359,8 @@ class CameraBackup(private val context: Context, private val now: () -> Long = S
 
 class CameraBackupWorker(context: Context, parameters: WorkerParameters) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
-        val backup = (applicationContext as PhotoPrismApp).appModule.cameraBackup
+        val collection = BackupCollection.entries.firstOrNull { it.id == inputData.getString("collection") } ?: BackupCollection.CAMERA
+        val backup = (applicationContext as PhotoPrismApp).appModule.backups.getValue(collection)
         // Periodic failures are visible in Camera and retried at the next configured interval.
         backup.periodic()
         return Result.success()
