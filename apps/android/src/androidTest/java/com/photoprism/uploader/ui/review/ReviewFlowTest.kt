@@ -100,8 +100,8 @@ class ReviewFlowTest {
             }
             compose.runOnIdle { showGrid.value = true }
             compose.waitUntil(10_000) { grid.uiState.value.images.isNotEmpty() && image.uploadKey in grid.uiState.value.syncedImageKeys }
-            compose.onNodeWithContentDescription("Synced").assertIsDisplayed()
-            compose.onNodeWithContentDescription("Synced").performTouchInput { doubleClick() }
+            compose.onNodeWithTag("media:${image.uploadKey}").assertIsDisplayed().assert(hasContentDescription("Synced"))
+            compose.onNodeWithTag("media:${image.uploadKey}").performTouchInput { doubleClick() }
             compose.onNodeWithTag("zoomable-photo").assertIsDisplayed()
             compose.onNodeWithTag("zoomable-photo").performTouchInput { doubleClick() }
             compose.onNodeWithTag("zoom-indicator").assertExists()

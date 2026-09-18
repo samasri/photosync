@@ -11,10 +11,11 @@ data class MediaImage(
     val displayName: String,
     val size: Long,
     val bucketId: String,
-    val dateAdded: Long
+    val dateAdded: Long,
+    val video: Boolean = false
 ) {
     /**
      * Stable key for tracking uploads: "${id}:${size}"
      */
-    val uploadKey: String get() = "$id:$size"
+    val uploadKey: String get() = if (video) "video:$id:$size" else "$id:$size"
 }

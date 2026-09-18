@@ -1,44 +1,108 @@
-# Camera service
+# PhotoSync service
 
-A Python standard-library API compares photo contents with an existing archive and
-accepts conditional uploads. The phone sets its endpoint/token; only the server sets
-the filesystem destinations. The archive is the primary copy; optional additional
-directories can feed an importer such as PhotoPrism. No PhotoPrism API is needed.
+Two independent workflows share one authenticated server:
+
+- **Backup** compares phone media with persistent archive folders and uploads missing files.
+- **PhotoPrism** delivers explicitly selected media to an import directory. The app records
+  successful deliveries because PhotoPrism may move files out of that directory.
+
+An archive upload never writes to the import directory, and an import delivery never
+writes to an archive. No PhotoPrism API is needed; delivery does not confirm ingestion.
 
 ## Deployment
 
 From the repository root:
 
-1. Copy `.env.example` to `.env`. Set `CAMERA_ARCHIVE_PATH` to an existing archive,
-   `CAMERA_IMPORT_PATH` to the existing PhotoPrism import directory,
-   `CAMERA_COPY_PATHS=["/photoprism-import"]`, `CAMERA_TOKEN` to a random secret,
-   and `CAMERA_PUBLIC_URL` to the intended HTTPS
-   endpoint (a setup reference; Compose does not register DNS/routes).
-2. Create `services/camera/state/`. On macOS, share the archive disk read/write with
-   your Docker VM, preserving its existing shares.
+1. Copy `.env.example` to `.env`. Configure four existing host directories:
+   `CAMERA_ARCHIVE_PATH`, `WHATSAPP_IMAGES_ARCHIVE_PATH`,
+   `WHATSAPP_VIDEOS_ARCHIVE_PATH`, and `PHOTOPRISM_IMPORT_PATH`.
+   Set `CAMERA_TOKEN` to a random secret. `CAMERA_PUBLIC_URL` is a setup reference;
+   Compose does not register DNS or gateway routes.
+2. Create `services/camera/state/`. Share the archive and import directories read/write
+   with the Docker VM, if applicable. Directories must be distinct and non-nested.
 3. Ensure the gateway's external network `internal-proxy` exists.
 4. Run `docker compose up -d --build`.
-5. Configure the gateway's HTTPS route to `photosync-camera:8787`. Enter the public
-   URL/token in the app's **Settings → Backup**.
+5. Route HTTPS to `photosync-camera:8787`. Enter the base URL and token in the app's
+   **Settings → Backup** and **Settings → PhotoPrism**. The settings remain independent.
 
-No host port is published. The archive mounts at `/photos`, and the private index at
-`/state/inventory.sqlite3`. Missing source paths are not created. The authenticated
-health check verifies primary and copy-directory availability without scanning.
-`CAMERA_COPY_PATHS` is a JSON array of **container paths**; add matching bind mounts
-to Compose for more destinations. The primary archive remains configured separately.
-Use `[]` to disable additional copies. For direct Python deployment, use host paths.
-Directories must exist, be distinct and not contain one another.
+Compose publishes no host port. Missing bind sources are not created. Private SQLite
+state lives under `/state`; back it up along with app state. Health checks verify all
+configured directories without scanning media. One unavailable destination does not
+redirect writes or prevent requests to another available destination.
 
-If network DNS runs inside the VM, record host DNS settings and temporarily switch
-to an external resolver before restarting it. Verify DNS and other services recover,
-restore original DNS and flush caches. On macOS, router-provided DNS is restored with
-`networksetup -setdnsservers <network-service> Empty`; flush with
-`sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder`.
+When upgrading from Camera multi-destination delivery, rename `CAMERA_IMPORT_PATH`
+to `PHOTOPRISM_IMPORT_PATH` and remove `CAMERA_COPY_PATHS`. Archive indexes and old
+receipt tables remain intact; old Camera delivery receipts are no longer consulted.
+No existing media is moved or delivered automatically by this migration.
 
-For direct development, use Python 3.9+, copy this directory's `.env.example` to `.env`,
-and configure an existing storage root, local index path, token and optional mount
-root (a mounted ancestor). Run `python3 services/camera/server.py`. Production uses
-root Compose instead; HTTPS belongs at the gateway.
+For direct Python deployment, use Python 3.9+, this directory's `.env.example`, and
+`python3 services/camera/server.py`. Configure `PHOTOPRISM_IMPORT_ROOT` and a separate
+`PHOTOPRISM_RECEIPTS_PATH`. Optional mount roots must be mounted ancestors of their
+archive. Production HTTPS belongs at the gateway.
+
+If DNS runs inside the Docker VM, preserve host DNS settings before restarting it.
+Temporarily use an external resolver, verify recovery, then restore the original
+settings and flush caches. No VM restart is needed for an ordinary service update.
+
+## Protocol and comparison
+
+All endpoints require `Authorization: Bearer <token>`.
+
+| Endpoint | Contract |
+| --- | --- |
+| `GET /health` | Authentication and destination availability. |
+| `POST /v1/refresh` | Refresh archive index; return generation and collection. |
+| `POST /v1/check` | Compare up to 500 name/SHA-256 pairs at that generation; return synced, missing, or conflict and server hash. |
+| `PUT /v1/files/{relative-path}` | Archive upload; require Content-Length and `X-Content-SHA256`. |
+| `PUT /v1/import/{filename}` | Independent delivery; require Content-Length and `X-Content-SHA256`. Images and videos accepted, flat filenames only. |
+
+Backup requests select `camera`, `whatsapp-images`, or `whatsapp-videos` with
+`X-Backup-Collection`. Omission selects Camera for older clients. Unknown or
+unconfigured collections return 404. Each archive has its own index, generation and
+writer lock. Import requests always select the import directory, regardless of this header.
+
+The first archive scan hashes contents. Later scans reuse hashes when size, modification
+time and change time match. Camera recognizes identical contents anywhere in its
+archive and uploads flat filenames. WhatsApp requires matching contents at the same
+relative path, preserving folders such as `Sent`. Phone deletions never delete server files.
+Hidden files and symlinks are excluded; traversal and symlink upload ancestors are rejected.
+
+Different bytes at an existing archive path require `X-Replace-SHA256` matching the
+current bytes. The app asks for confirmation; bulk/automatic uploads skip conflicts.
+Replacement overwrites the prior version. Keep decisions remain local to the phone.
+
+Cached checks are not full integrity scans. Stop the service and run
+`python3 services/camera/index_archive.py --full` with the direct environment pointing
+at the same Camera archive/index to reread every image. The index contains filenames.
+Root/device replacement is detected.
+
+### Import delivery and retries
+
+The app retains its existing PhotoPrism upload-history database and durable queue.
+Green checks mean successful delivery, not current import-folder presence. Legacy
+PhotoPrism/WebDAV history remains valid; archive checkmarks are never converted to
+delivery history. Users select Camera media explicitly, even if it was archived before.
+
+The server streams into a hidden temporary file, verifies the hash, fsyncs, publishes
+with mode `0644`, then commits a receipt keyed by filename and hash. A retry after a
+completed delivery returns 201 even if PhotoPrism consumed the file. Receipts live in
+`photoprism-receipts.sqlite3`, separately from archive inventories. They suppress
+transport duplicates; the app remains the source of its displayed upload history.
+
+An existing same-name file with different bytes returns 409 and is never overwritten
+by import requests, even with a replacement header. Resolve the destination conflict
+and retry the app queue. Identical existing bytes are accepted. A crash between
+publication and receipt persistence can cause redelivery if the importer consumed
+that file: delivery is at least once, not exactly once. There is no server retry worker.
+
+Archive images accept up to 100 MiB; archive videos and import deliveries accept up
+to 4 GiB. Android allows a 60-minute request with a 10-minute write timeout. Server
+sockets time out after 60 seconds without progress. Configure proxies for the intended
+size and duration. An interrupted retry starts the file again; uploads are not resumable.
+
+Writer locks serialize service writes. On filesystems without exclusive rename/hard
+links, a checked ordinary rename is used. External writers must not concurrently
+replace archive files or directories. Import consumers may remove completed files.
 
 ## Diagnostics
 
@@ -48,149 +112,36 @@ docker compose logs -f camera
 docker compose ps
 ```
 
-JSON lines go to stdout. Docker rotates at 10 MB per file, keeping three files per
-container. These are local diagnostics, not a durable audit trail. Healthy probes
-are quiet; failed probes and requests are logged.
+JSON logs include request ID, route template, status, duration, workflow, archive
+collection, check totals, byte count, upload outcome and fixed failure reason.
+`X-Request-ID` correlates responses. Outcomes include `created`, `replaced`,
+`already_present`, and `already_delivered`. Index events report hashes computed/reused,
+bytes hashed and elapsed time. Healthy probes are quiet. Docker rotates three 10 MB logs.
 
-| Event / fields | Meaning |
-| --- | --- |
-| `server_ready` | Process started listening. |
-| `request` | Generated `request_id`, method, route template, HTTP status and total `duration_ms` including lock waits. ID also returned as `X-Request-ID`. |
-| Check totals | `batch_size`, `generation`, `synced`, `missing`, `conflict`; sum batches for a complete phone comparison. |
-| Upload details | Declared `bytes`, primary outcome (`created`, `replaced`, `already_present`), `copy_destinations`, `copies_completed` or fixed failure reason. |
-| Copy failure | `copy_delivery_failed`, one-based `copy_destination` position in the configured array, and OS/SQLite error code. No directory paths are logged. |
-| `index_refreshed` | Photo count, hashes computed/reused, bytes hashed, removed entries, generation and duration. |
-| `index_failed` | Scan failure and duration; transaction rolls back. |
-| Error details | Fixed `reason`, exception class, OS `errno` or SQLite code where available. |
+Logs omit credentials, headers, client addresses, filenames, hashes, raw URLs,
+request bodies and exception messages. Errors expose exception class and OS/SQLite
+codes only. Logs are diagnostics, not a durable upload audit.
 
-Tokens, headers, client addresses, names, content hashes, bodies, raw URLs and
-exception messages are omitted. Unknown routes log as `unknown`. IDs identify
-requests, not photos.
+- **401:** check the token.
+- **409:** stale archive generation or a filename/replacement conflict.
+- **422:** bytes do not match the supplied hash.
+- **503:** unavailable storage, full disk, filesystem or database failure. Check the
+  fixed reason and OS/SQLite code; errno 28 indicates no free space.
+- **Many archive conflicts:** check original-media permission before replacing files;
+  Android's EXIF redaction can produce different bytes.
 
-- **401 / unauthorized:** tokens do not match.
-- **409 / stale_generation:** another refresh/upload changed inventory; check again.
-  Upload 409s instead explain a destination or replacement conflict.
-- **422 / content_hash_mismatch:** uploaded bytes differ from the client's hash.
-- **503 / storage_unavailable:** missing/replaced root or disk. Other 503s include
-  filesystem/SQLite codes; OS errno 28, for example, means no free space.
-- **503 / copy_delivery_failed:** the primary may already be saved, but an additional
-  destination failed. Restore access/space or resolve its filename conflict, then
-  check and retry from the app. An unrelated same-name file is never intentionally
-  overwritten. `copy_storage_unavailable` on health checks identifies unavailable
-  additional storage.
-- **Many conflicts:** check original-photo permission/cache migration before replacing
-  files. Redacted EXIF previously caused false conflicts. Logs show totals; exact
-  differences require a private comparison of original bytes.
+## Tests and Android boundaries
 
-## Comparison and write guarantees
+Run `python3 -m unittest discover -s services/camera -q`. After building the image,
+run `python3 tools/test_camera_container.py`. Tests use synthetic bytes, temporary
+archives/import directories and loopback. Container coverage checks isolation,
+conditional archive replacement, consumed imports, retry receipts, video delivery and logs.
 
-First scans hash image contents with SHA-256. Later scans reuse hashes when size,
-modification time and change time match. Subdirectories are indexed recursively;
-identical contents anywhere count as synced. Uploads retain original names directly
-in the archive root. Phone deletion never deletes server files. Videos, hidden files
-and symlinks are excluded.
+See [Android maintenance](../../apps/android/README.md) for device tests. Backup uses
+cached comparisons on configured intervals; **Check now** forces a comparison and never
+uploads. Each collection has its own automatic-upload toggle, off by default.
+Only Android MediaStore-visible files are included; hidden/unindexed folders are not
+a full filesystem rsync replacement.
 
-| Endpoint | Contract |
-| --- | --- |
-| `GET /health` | Authentication and storage availability only. |
-| `POST /v1/refresh` | Refresh index; return `generation`. |
-| `POST /v1/check` | Accept generation and up to 500 items with `name`/`sha256`; return status (`synced`, `missing`, `conflict`) and `serverHash`. |
-| `PUT /v1/files/{encoded-name}` | Require `X-Content-SHA256`, known Content-Length, at most 100 MiB. Stream, verify, fsync and publish complete bytes. |
-
-All endpoints require `Authorization: Bearer <token>`. Replacement additionally
-requires `X-Replace-SHA256` matching current server bytes and overwrites the prior
-version. The app asks for confirmation; bulk/automatic uploads skip conflicts.
-Keep decisions remain local to the phone.
-
-### Multiple destinations and retries
-
-Uploads return **201 only after every configured copy has been delivered**. Copies
-use hidden temporary files, checksum verification, fsync and atomic publication.
-Additional copies use mode `0644` so a separate importer user can read them.
-There is no atomic transaction across disks: a 503 can leave the primary and some
-copies complete. SQLite records pending deliveries before primary publication and
-receipts after each copy. A pending delivery makes the phone comparison `missing`
-even when the primary exists, so **Check now**, then **Upload all**, can retry it.
-Completed destinations are skipped on retry, including after a restart. There is no
-independent server retry worker.
-
-Import tools may move/delete delivered files. Receipts remember delivery; the service
-does not keep repopulating an import folder or verify that PhotoPrism processed it.
-A crash between copy publication and receipt persistence can cause redelivery if an
-importer already consumed the file. This is at-least-once delivery, not exactly-once.
-Back up the private SQLite index because it now holds delivery receipts too.
-
-A confirmed replacement updates additional copies only if their bytes match the
-previous primary version (or already match the new version). Other contents cause
-503 and require resolving the destination conflict before retrying. Successful
-primary writes are retained on copy failure. Additional destinations apply to
-received uploads; configuring a new one does **not** backfill the existing archive.
-Removing a destination from configuration stops requiring its pending deliveries.
-
-Cached checks are not full integrity scans. Stop the service and run
-`python3 services/camera/index_archive.py --full` with the direct environment pointing
-to the same archive/index to reread every image. The index contains private filenames.
-The running service detects root/device replacement.
-
-The inventory lock serializes service writes. Filesystems without exclusive rename
-or hard links (some ExFAT/virtiofs mounts) use ordinary atomic rename after checking
-the destination. Files appear fully written, but unrelated concurrent writers can
-still be overwritten. Do not run other archive writers during uploads; conditional
-replacement also relies on a process-local lock.
-
-## Tests
-
-Run `python3 -m unittest discover -s services/camera -v`. Tests use temporary synthetic
-archives and loopback servers, including diagnostic/privacy assertions. See
-[Android tests](../../apps/android/README.md#updates-and-tests) for client coverage.
-For an actual container end-to-end check, run `docker compose build camera`, then
-`python3 tools/test_camera_container.py` from the repository root. It generates PNGs
-and mounts only temporary synthetic archive/import/state directories. It verifies
-HTTP comparison/upload, both copies, replacement, restart/retry, consumed imports,
-and log privacy, then removes its test container and directories.
-
-Legacy `/v1/objects/{hash}`, `run_lab.py` and `lab_webdav.py` remain only for prototype
-regression; production uses `/v1/files/`.
-
-## Backup collections
-
-The same service also supports `whatsapp-images` and `whatsapp-videos`. Requests
-select a collection with `X-Backup-Collection`; omission selects Camera for older
-clients. Unknown or unconfigured collections return 404. Refresh responses echo
-the collection, so new clients refuse to use an older server for WhatsApp backups.
-Each collection has its own archive, SQLite index, generation counter and lock.
-Camera's existing index and delivery receipts are retained without migration.
-
-Compose mounts `WHATSAPP_IMAGES_ARCHIVE_PATH` and `WHATSAPP_VIDEOS_ARCHIVE_PATH`
-into separate directories. Configure both before rebuilding/restarting the service.
-For direct execution, see the optional collection variables in `.env.example`.
-Health checks cover every configured archive. A failure in one collection does not
-redirect requests to another collection or its PhotoPrism delivery folder.
-
-WhatsApp paths are relative to their respective phone media folders, including
-subfolders such as `Sent`. A backup requires the same relative path and SHA-256;
-Camera retains its existing content-anywhere comparison. Traversal, hidden path
-components and symlink upload ancestors are rejected. As with the existing flat
-archive, external concurrent writers must not replace directories during uploads.
-Phone deletions never remove server files. Replacements remain conditional on the
-previous server hash and require confirmation in the app.
-
-Images retain the 100 MiB request limit. WhatsApp video uploads stream up to 4 GiB
-per file. Android permits a 60-minute request with a 10-minute write timeout; the
-server times out stalled sockets after 60 seconds. Configure any reverse proxy to
-allow the intended file size and duration. An interrupted upload stays pending;
-retry restarts that file rather than resuming a partial byte range.
-
-The Android Backup settings page shares one server/token and check interval across
-collections, with separate automatic-upload switches. New WhatsApp collections
-inherit the Camera connection configuration but start with automatic upload off.
-Each collection keeps independent local status, check timestamps and scheduled work.
-PhotoPrism selection/history/credentials remain separate. Only MediaStore-visible,
-non-pending, non-trashed media is included; hidden folders excluded by Android's
-media index are not a full filesystem rsync replacement.
-
-Run `python3 -m unittest discover -s services/camera -q` and, after building the
-container, `python3 tools/test_camera_container.py`. Both use synthetic destinations.
-Android's `BackupCollectionsTest` checks collection isolation and old-server refusal;
-its opt-in `syntheticBackupUrl` test requires a fresh synthetic service reachable
-through ADB reverse with token `synthetic-e2e`. Never point it at production.
+Legacy `/v1/objects/{hash}`, `run_lab.py` and `lab_webdav.py` support prototype regression
+only. Production uses `/v1/files/` and `/v1/import/`.

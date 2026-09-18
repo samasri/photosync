@@ -82,7 +82,7 @@ class AlbumGridViewModel(
                     }
                 }
                 loadedBucket = bucketId
-                visibleCount = if (bucketId == "__whatsapp") minOf(pageSize, sorted.size) else sorted.size
+                visibleCount = if (bucketId.startsWith("__")) minOf(pageSize, sorted.size) else sorted.size
                 publishImages()
             } catch (e: CancellationException) {
                 throw e

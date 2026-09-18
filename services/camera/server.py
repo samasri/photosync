@@ -90,101 +90,6 @@ def publish_new(source, target):
         raise OSError(error, os.strerror(error), os.fspath(target))
 
 
-def copy_paths(value):
-    paths = json.loads(value)
-    if not isinstance(paths, list) or any(not isinstance(p, str) or not p or not Path(p).is_absolute() for p in paths):
-        raise ValueError('CAMERA_COPY_PATHS must be a JSON array of absolute directory paths')
-    return paths
-
-
-class Deliveries:
-    """Persistent delivery receipts: import consumers may remove completed copies."""
-    def __init__(self, inventory, paths):
-        self.inventory = inventory
-        self.roots = [Path(p).resolve() for p in paths]
-        roots = [inventory.root, *self.roots]
-        if len(set(roots)) != len(roots) or any(a in b.parents or b in a.parents for i, a in enumerate(roots) for b in roots[i + 1:]):
-            raise ValueError('Storage directories must be distinct and non-nested')
-        if any(not p.is_dir() for p in self.roots):
-            raise ValueError('Copy destinations must already exist')
-        self.identities = [(p.stat().st_dev, p.stat().st_ino) for p in self.roots]
-        self.db = inventory.db
-        self.db.execute('CREATE TABLE IF NOT EXISTS deliveries (name TEXT, hash TEXT, destination TEXT, previous_hash TEXT, done INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(name,hash,destination))')
-        self.db.commit()
-
-    def available(self, index):
-        stat = self.roots[index].stat()
-        if (stat.st_dev, stat.st_ino) != self.identities[index]:
-            raise OSError('Copy destination changed')
-
-    def begin(self, name, sha, previous, reset=False):
-        # Commit intent before publishing the primary. A crash cannot hide an
-        # unfinished delivery behind a successful primary inventory comparison.
-        if reset:
-            self.db.execute('DELETE FROM deliveries WHERE name=? AND hash=?', (name, sha))
-        self.db.executemany('INSERT OR IGNORE INTO deliveries (name,hash,destination,previous_hash) VALUES (?,?,?,?)',
-                            ((name, sha, str(root), previous) for root in self.roots))
-        self.db.commit()
-
-    def pending(self, name, sha):
-        return any(self.db.execute('SELECT 1 FROM deliveries WHERE name=? AND hash=? AND destination=? AND done=0',
-                                  (name, sha, str(root))).fetchone() for root in self.roots)
-
-    def deliver(self, name, sha, diagnostics):
-        diagnostics['copy_destinations'] = len(self.roots)
-        diagnostics['copies_completed'] = 0
-        for index, root in enumerate(self.roots):
-            row = self.db.execute('SELECT previous_hash,done FROM deliveries WHERE name=? AND hash=? AND destination=?',
-                                  (name, sha, str(root))).fetchone()
-            if row[1]:
-                diagnostics['copies_completed'] += 1
-                continue
-            temporary = None
-            try:
-                self.available(index)
-                target = root / name
-                if target.is_symlink() or (target.exists() and not target.is_file()):
-                    raise FileExistsError(errno.EEXIST, 'Copy destination conflict')
-                current = digest_file(target) if target.exists() else None
-                if current != sha:
-                    # A confirmed replacement permits only the previous primary
-                    # bytes here, never an unrelated file with the same name.
-                    if current is not None and current != row[0]:
-                        raise FileExistsError(errno.EEXIST, 'Copy destination conflict')
-                    with tempfile.NamedTemporaryFile(dir=root, prefix='.incoming-', delete=False) as out:
-                        temporary = Path(out.name)
-                        with (self.inventory.root / name).open('rb') as source:
-                            shutil.copyfileobj(source, out, 1024 * 1024)
-                        # Importers often run as a different container user.
-                        os.fchmod(out.fileno(), 0o644)
-                        out.flush()
-                        os.fsync(out.fileno())
-                    if digest_file(temporary) != sha:
-                        raise OSError(errno.EIO, 'Copy verification failed')
-                    self.available(index)
-                    if current is None:
-                        publish_new(temporary, target)
-                    else:
-                        os.replace(temporary, target)
-                    temporary = None
-                directory = os.open(root, os.O_RDONLY)
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
-                self.db.execute('UPDATE deliveries SET done=1 WHERE name=? AND hash=? AND destination=?', (name, sha, str(root)))
-                self.db.commit()
-                diagnostics['copies_completed'] += 1
-            except (OSError, sqlite3.Error):
-                self.db.rollback()
-                diagnostics['copy_destination'] = index + 1
-                diagnostics['reason'] = 'copy_delivery_failed'
-                raise
-            finally:
-                if temporary is not None:
-                    temporary.unlink(missing_ok=True)
-
-
 class Inventory:
     def __init__(self, root, database, mount=None, collection="camera"):
         self.collection = collection
@@ -268,7 +173,7 @@ class Inventory:
                 target = self.root / name
                 existing = self.db.execute('SELECT hash FROM files WHERE path=?', (name,)).fetchone()
                 if same:
-                    status = 'missing' if getattr(self, 'deliveries', None) and self.deliveries.pending(name, sha) else 'synced'
+                    status = 'synced'
                 elif target.exists() or target.is_symlink():
                     status = 'conflict'
                 else:
@@ -304,20 +209,15 @@ def safe_parent(root, name, create=False):
     return parent
 
 
-def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=None, destinations=None, collections=None):
+def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=None, collections=None, import_root=None, import_database=None):
     root = Path(root).resolve()
     if not token:
         raise ValueError('CAMERA_TOKEN is required')
     if not root.is_dir():
         raise ValueError('CAMERA_STORAGE_ROOT must be an existing directory')
     inventory = Inventory(root, database or root / '.photosync-index.sqlite3', mount)
-    try:
-        inventory.deliveries = Deliveries(inventory, destinations or [])
-    except Exception:
-        inventory.db.close()
-        raise
-
     inventories = {'camera': inventory}
+    delivery = None
     try:
         for collection, config in (collections or {}).items():
             if collection not in COLLECTIONS - {'camera'}:
@@ -327,12 +227,18 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                 raise ValueError('Backup collection directory is unavailable')
             other = Inventory(folder, config['database'], config.get('mount'), collection)
             inventories[collection] = other
-            other.deliveries = Deliveries(other, [])
-        roots = [i.root for i in inventories.values()] + inventory.deliveries.roots
+
+        if import_root:
+            delivery = Inventory(Path(import_root).resolve(), import_database or str(database) + '.imports')
+            delivery.suffixes = IMAGE_SUFFIXES | VIDEO_SUFFIXES
+            delivery.max_bytes = 4 * 1024 ** 3
+            delivery.db.execute('CREATE TABLE IF NOT EXISTS import_receipts (name TEXT, hash TEXT, PRIMARY KEY(name,hash))')
+            delivery.db.commit()
+        roots = [i.root for i in inventories.values()] + ([delivery.root] if delivery else [])
         if len(set(roots)) != len(roots) or any(a != b and a.is_relative_to(b) for a in roots for b in roots):
             raise ValueError('Backup collection roots must be separate')
     except Exception:
-        for current in inventories.values():
+        for current in [*inventories.values(), *([delivery] if delivery else [])]:
             current.db.close()
         raise
 
@@ -361,12 +267,13 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
             finally:
                 path = getattr(self, 'path', '')
                 route = path if path in ('/health', '/v1/refresh', '/v1/check') else (
+                    '/v1/import/:name' if path.startswith('/v1/import/') else
                     '/v1/files/:name' if path.startswith('/v1/files/') else
                     '/v1/objects/:hash' if path.startswith('/v1/objects/') else 'unknown')
                 method = getattr(self, 'command', '')
                 method = method if method in ('GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH') else 'unknown'
                 # Healthy probes are deliberately quiet; failures always get a record.
-                if self.response_code is not None and not (route == '/health' and self.response_code == 200 and set(self.diagnostics) <= {'collection'}):
+                if self.response_code is not None and not (route == '/health' and self.response_code == 200 and set(self.diagnostics) <= {'collection', 'workflow'}):
                     event('request', request_id=self.request_id, method=method, route=route,
                           status=self.response_code, duration_ms=round((time.monotonic() - started) * 1000),
                           **self.diagnostics)
@@ -397,12 +304,20 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
             if not hmac.compare_digest(self.headers.get('Authorization', ''), 'Bearer ' + token):
                 self.failure(401, 'unauthorized')
                 return False
-            collection = self.headers.get('X-Backup-Collection', 'camera')
-            if collection not in inventories:
-                self.failure(404, 'unknown_collection')
-                return False
-            self.inventory = inventories[collection]
-            self.diagnostics['collection'] = collection
+            if self.path.startswith('/v1/import/'):
+                if delivery is None:
+                    self.failure(404, 'import_not_configured')
+                    return False
+                self.inventory = delivery
+                self.diagnostics['workflow'] = 'photoprism'
+            else:
+                collection = self.headers.get('X-Backup-Collection', 'camera')
+                if collection not in inventories:
+                    self.failure(404, 'unknown_collection')
+                    return False
+                self.inventory = inventories[collection]
+                self.diagnostics['collection'] = collection
+                self.diagnostics['workflow'] = 'backup'
             try:
                 self.inventory.available()
             except OSError as error:
@@ -422,10 +337,8 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                 return
             try:
                 if self.path == '/health':
-                    for current in inventories.values():
+                    for current in [*inventories.values(), *([delivery] if delivery else [])]:
                         current.available()
-                        for index in range(len(current.deliveries.roots)):
-                            current.deliveries.available(index)
                 self.respond(200 if self.path == '/health' else 404)
             except OSError as error:
                 self.failure(503, 'copy_storage_unavailable', error)
@@ -475,12 +388,14 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
         def do_PUT(self):
             if not self.authorized():
                 return
-            legacy = self.object_target()
-            name = unquote(urlsplit(self.path).path.removeprefix('/v1/files/'))
+            importing = self.path.startswith('/v1/import/')
+            prefix = '/v1/import/' if importing else '/v1/files/'
+            legacy = None if importing else self.object_target()
+            name = unquote(urlsplit(self.path).path.removeprefix(prefix))
             sha = legacy.name if legacy else self.headers.get('X-Content-SHA256', '')
             if self.path.startswith('/v1/objects/') and legacy is None:
                 return self.respond(404)
-            if not legacy and (not self.path.startswith('/v1/files/') or not valid_path(name, self.inventory.collection)
+            if not legacy and (not self.path.startswith(prefix) or not valid_path(name, self.inventory.collection)
                                or Path(name).suffix.lower() not in self.inventory.suffixes):
                 return self.respond(400)
             if not HASH.fullmatch(sha):
@@ -502,12 +417,16 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                         out.write(data)
                         digest.update(data)
                         remaining -= len(data)
+                    if importing: os.fchmod(out.fileno(), 0o644)
                     out.flush()
                     os.fsync(out.fileno())
                 if digest.hexdigest() != sha:
                     return self.failure(422, 'content_hash_mismatch')
                 with self.inventory.lock:
                     self.inventory.available()
+                    if importing and self.inventory.db.execute('SELECT 1 FROM import_receipts WHERE name=? AND hash=?', (name, sha)).fetchone():
+                        self.diagnostics['outcome'] = 'already_delivered'
+                        return self.respond(201, {'sha256': sha})
                     if not legacy:
                         safe_parent(self.inventory.root, name, create=True)
                     if target.is_symlink() or (target.exists() and not target.is_file()):
@@ -515,17 +434,16 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                     current = digest_file(target) if target.exists() else None
                     if current == sha:
                         if not legacy:
-                            self.inventory.deliveries.begin(name, sha, None)
-                            self.inventory.deliveries.deliver(name, sha, self.diagnostics)
+                            if importing:
+                                self.inventory.db.execute('INSERT OR IGNORE INTO import_receipts VALUES (?,?)', (name, sha))
+                                self.inventory.db.commit()
                             self.inventory.generation += 1
                         self.diagnostics['outcome'] = 'already_present'
                         return self.respond(201, {'sha256': sha})
-                    if not legacy and current is not None and self.headers.get('X-Replace-SHA256') != current:
+                    if not legacy and current is not None and (importing or self.headers.get('X-Replace-SHA256') != current):
                         return self.failure(409, 'replacement_hash_required_or_changed', body={'error': 'Same filename, different contents', 'serverHash': current})
                     if not legacy and current is None and self.headers.get('X-Replace-SHA256'):
                         return self.failure(409, 'replacement_target_missing', body={'error': 'Server copy changed; check again'})
-                    if not legacy:
-                        self.inventory.deliveries.begin(name, sha, current, reset=True)
                     if current is None:
                         # Serialize uploads, preserving an existing destination.
                         try:
@@ -541,13 +459,16 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                         os.fsync(directory)
                     finally:
                         os.close(directory)
-                    if not legacy:
+                    if importing:
+                        # Do not stat the published file: the import consumer may already have removed it.
+                        self.inventory.db.execute('INSERT OR IGNORE INTO import_receipts VALUES (?,?)', (name, sha))
+                        self.inventory.db.commit()
+                    elif not legacy:
                         stat = target.stat()
                         self.inventory.db.execute('INSERT OR REPLACE INTO files VALUES (?,?,?,?,?)',
                             (name, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, sha))
                         self.inventory.db.commit()
                         self.inventory.generation += 1
-                        self.inventory.deliveries.deliver(name, sha, self.diagnostics)
                 self.respond(201, {'sha256': sha})
             except ValueError as error:
                 self.failure(400, 'invalid_upload', error)
@@ -561,6 +482,7 @@ def make_server(root, token, host='127.0.0.1', port=8787, database=None, mount=N
                         self.diagnostics.update(cleanup_failed=True, **error_fields(error))
 
     server = ThreadingHTTPServer((host, port), Handler)
+    server.import_inventory = delivery
     server.inventory = inventory
     server.inventories = inventories
     return server
@@ -581,7 +503,8 @@ if __name__ == '__main__':
                          os.environ.get('CAMERA_HOST', '127.0.0.1'),
                          int(os.environ.get('CAMERA_PORT', '8787')),
                          os.environ.get('CAMERA_INDEX_PATH'), os.environ.get('CAMERA_MOUNT_ROOT'),
-                         copy_paths(os.environ.get('CAMERA_COPY_PATHS', '[]')), collections)
+                         collections=collections, import_root=os.environ.get('PHOTOPRISM_IMPORT_ROOT'),
+                         import_database=os.environ.get('PHOTOPRISM_RECEIPTS_PATH'))
     logging.basicConfig(level=logging.INFO, format='%(message)s', stream=sys.stdout)
     event('server_ready', port=server.server_address[1])
     server.serve_forever()

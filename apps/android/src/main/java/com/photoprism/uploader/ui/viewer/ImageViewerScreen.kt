@@ -38,6 +38,10 @@ fun ImageViewerScreen(
             Text("Back", color = Color.White)
         }
 
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides Color.White) {
+                com.photoprism.uploader.ui.components.SettingsAction(
+                    Modifier.align(Alignment.TopEnd).padding(top = 40.dp))
+        }
         Text(
             text = imageName,
             color = Color.White,

@@ -60,10 +60,10 @@ class SyntheticLibrary(context: Context) {
 
     @Synchronized fun images(bucket: String): List<MediaImage> {
         seed()
-        if (bucket !in listOf("camera", "whatsapp")) return emptyList()
-        return File(root, bucket).listFiles()?.filter { it.extension == "jpg" }?.sortedBy { it.name }?.map {
-            MediaImage((it.name.hashCode().toLong() and 0xffffffffL), Uri.fromFile(it), it.name, it.length(), bucket, 1788220800L)
-        } ?: emptyList()
+        if (bucket !in listOf("camera", "whatsapp", "whatsapp-videos")) return emptyList()
+        return backupFiles(bucket).sortedBy { it.name }.map {
+            MediaImage((it.name.hashCode().toLong() and 0xffffffffL), Uri.fromFile(it), it.name, it.length(), bucket, it.lastModified() / 1000, video = bucket == "whatsapp-videos")
+        }
     }
 
     fun albums(): List<Album> = listOf("whatsapp" to "WhatsApp Images", "camera" to "Camera").map { (id, name) ->

@@ -56,7 +56,7 @@ fun CameraScreen(backup: CameraBackup, onBack: (() -> Unit)? = null, onView: (Ca
             confirmButton = { TextButton(onClick = { backup.uploadOne(photo, true); replace = null }) { Text("Replace server copy") } },
             dismissButton = { TextButton(onClick = { replace = null }) { Text("Cancel") } })
     }
-    Scaffold(topBar = { TopAppBar(title = { Text(backup.collection.title) }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(title = { Text(backup.collection.title) }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }, navigationIcon = {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
     }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -121,7 +121,7 @@ fun CameraSettingsScreen(backup: CameraBackup, backups: List<CameraBackup> = lis
     var interval by rememberSaveable { mutableStateOf(state.interval) }
     var menu by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
-    Scaffold(topBar = { TopAppBar(title = { Text("Backup") }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(title = { Text("Backup") }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }, navigationIcon = {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
     }) }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

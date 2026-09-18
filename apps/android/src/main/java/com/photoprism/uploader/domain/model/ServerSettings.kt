@@ -3,7 +3,7 @@ package com.photoprism.uploader.domain.model
 import com.photoprism.uploader.BuildConfig
 
 /**
- * WebDAV server connection settings.
+ * PhotoPrism delivery server connection settings. Legacy field names preserve callers.
  */
 data class ServerSettings(
     val baseUrl: String,

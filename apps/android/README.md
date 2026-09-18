@@ -7,7 +7,15 @@ provide the wiring.
 
 ## State boundaries
 
-PhotoPrism Backup owns its DataStore settings, Room history, durable queue and swipe state.
+PhotoPrism owns its DataStore settings, Room history, durable queue and swipe state.
+Its three collection screens share existing image keys and history; video keys use a
+`video:` prefix to avoid image/video ID collisions. No database schema changes are needed.
+The delivery URL/token are copied once from Backup connection settings into new DataStore
+keys; legacy WebDAV keys remain untouched. Later edits are independent. Queued files
+retain their names and route through `/v1/import/`. Original bytes are saved before
+acknowledging selection, then uploaded with known length and SHA-256. History checks
+never query the import directory or infer delivery from archive status.
+
 Camera owns `camera-backup` preferences, `camera-index.db` and the
 `camera-backup-periodic` WorkManager job. WhatsApp image/video backups use the same
 engine with separate collection IDs, preferences, indexes and WorkManager jobs.
@@ -35,11 +43,11 @@ Fingerprints cache MediaStore identity/version, size, dates and generation. The
 when byte interpretation changes. Credentials scope comparison status separately.
 See [Android media documentation](https://developer.android.com/training/data-storage/shared/media).
 
-## WhatsApp grid
+## PhotoPrism grids
 
-The PhotoPrism Backup tab queries matching MediaStore buckets directly. It reads lightweight
+The PhotoPrism collection screens query matching MediaStore paths directly. It reads lightweight
 metadata once, then parses dates, sorts and groups on a background dispatcher. The
-grid exposes 90 photos at a time and prefetches the next batch near the end; Coil
+grid exposes 90 items at a time and prefetches the next batch near the end; Coil
 loads thumbnails only for composed tiles. Selection and uploads use the full metadata
 index, so **Select All** includes photos beyond the visible batches. The date scrubber
 maps the full index to grid positions (including day headers), exposes metadata

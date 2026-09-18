@@ -24,7 +24,7 @@ fun ReviewScreen(model: ReviewViewModel, onBack: () -> Unit) {
     val image = state.images.firstOrNull()
     BackHandler(enabled = state.busy) { }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("WhatsApp • Photo swipe") }, navigationIcon = {
+        TopAppBar(title = { Text("WhatsApp • Photo swipe") }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }, navigationIcon = {
             TextButton(onClick = onBack, enabled = !state.busy) { Text("Back") }
         })
     }) { padding ->

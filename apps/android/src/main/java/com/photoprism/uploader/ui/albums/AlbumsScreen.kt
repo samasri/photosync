@@ -81,7 +81,7 @@ fun AlbumsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Albums") }
+                title = { Text("Albums") }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }
             )
         }
     ) { padding ->

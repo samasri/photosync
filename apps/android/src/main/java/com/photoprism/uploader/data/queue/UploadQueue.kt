@@ -36,10 +36,11 @@ class UploadQueue(
             if (uploaded.getUploadedByKey(image.uploadKey) != null) return@withLock
             if (dao.find(image.uploadKey) == null) {
                 val directory = File(context.filesDir, "pending_photos").apply { mkdirs() }
-                val file = File(directory, "${image.id}-${image.size}.photo")
+                val file = File(directory, "${if (image.video) "video-" else ""}${image.id}-${image.size}.photo")
                 val temporary = File(directory, "${file.name}.tmp")
                 try {
-                    context.contentResolver.openInputStream(image.contentUri).use { input ->
+                    val original = if (image.contentUri.scheme == "content") android.provider.MediaStore.setRequireOriginal(image.contentUri) else image.contentUri
+                    context.contentResolver.openInputStream(original).use { input ->
                         checkNotNull(input) { "Cannot read this photo. Check photo permissions." }
                         FileOutputStream(temporary).use { output ->
                             input.copyTo(output)
@@ -76,7 +77,7 @@ class UploadQueue(
                     dao.failed(item.key, "Saved photo is missing. The original photo may need to be selected again.")
                     continue
                 }
-                val url = "${currentSettings.baseUrl.trimEnd('/')}/${names.encodeForUrl(item.remoteName)}"
+                val url = "${currentSettings.baseUrl.trimEnd('/')}/v1/import/${names.encodeForUrl(item.remoteName)}"
                 when (val result = uploader.uploadFile(Uri.fromFile(file), url, currentSettings)) {
                     is WebDavUploader.UploadResult.Success -> {
                         // Commit the green check first. A crash before cleanup cannot cause a duplicate upload.

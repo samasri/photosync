@@ -21,7 +21,7 @@ class CollectionsTest(unittest.TestCase):
 
     def start(self):
         self.server = make_server(self.roots['camera'], 'synthetic', port=0,
-            database=self.root / 'camera.db', destinations=[self.roots['import']],
+            database=self.root / 'camera.db', import_root=self.roots['import'],
             collections={key: {'root': self.roots[key], 'database': self.root / (key + '.db')}
                          for key in ('whatsapp-images', 'whatsapp-videos')})
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -29,7 +29,7 @@ class CollectionsTest(unittest.TestCase):
 
     def stop(self):
         self.server.shutdown(); self.server.server_close(); self.thread.join()
-        for inventory in self.server.inventories.values():
+        for inventory in [*self.server.inventories.values(), self.server.import_inventory]:
             inventory.db.close()
 
     def tearDown(self):
@@ -64,7 +64,7 @@ class CollectionsTest(unittest.TestCase):
 
     def test_isolation_paths_delivery_restart_and_conflict(self):
         self.assertEqual(201, self.put('camera', 'same.jpg'))
-        self.assertTrue((self.roots['import'] / 'same.jpg').is_file())
+        self.assertFalse((self.roots['import'] / 'same.jpg').exists())
         self.assertEqual('missing', self.status('whatsapp-images', 'same.jpg'))
         self.assertEqual(201, self.put('whatsapp-images', 'Sent/same.jpg'))
         self.assertEqual('missing', self.status('whatsapp-images', 'same.jpg'))

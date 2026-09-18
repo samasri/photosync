@@ -14,7 +14,8 @@ services:
       CAMERA_STORAGE_ROOT: /photos
       CAMERA_MOUNT_ROOT: /photos
       CAMERA_INDEX_PATH: /state/inventory.sqlite3
-      CAMERA_COPY_PATHS: ${CAMERA_COPY_PATHS:-[]}
+      PHOTOPRISM_IMPORT_ROOT: /photoprism-import
+      PHOTOPRISM_RECEIPTS_PATH: /state/photoprism-receipts.sqlite3
       CAMERA_TOKEN: ${CAMERA_TOKEN:?Set CAMERA_TOKEN in .env}
       WHATSAPP_IMAGES_STORAGE_ROOT: /whatsapp-images
       WHATSAPP_IMAGES_MOUNT_ROOT: /whatsapp-images
@@ -31,7 +32,7 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ${CAMERA_IMPORT_PATH:?Set CAMERA_IMPORT_PATH in .env}
+        source: ${PHOTOPRISM_IMPORT_PATH:?Set PHOTOPRISM_IMPORT_PATH in .env}
         target: /photoprism-import
         bind:
           create_host_path: false

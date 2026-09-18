@@ -3,8 +3,8 @@
 ## Handle Android partial photo-library access
 
 The main app targets Android 15 but currently treats photo access as a
-simple granted/denied permission. Camera requires full access and stops when it
-is unavailable; Albums and WhatsApp still need explicit partial-access handling.
+simple granted/denied permission. Backup and PhotoPrism collections require full
+access; Albums still needs explicit partial-access handling.
 Android 14 can grant access to only a selected
 subset of photos. In that state, album counts, duplicate detection, and upload
 choices may be incomplete without the app explaining why.
@@ -26,18 +26,17 @@ References:
 
 ## Remove unsafe cleartext credential transport
 
-The main app permits cleartext HTTP globally and sends WebDAV credentials with
-HTTP Basic authentication. When the configured endpoint uses HTTP, credentials
+The main app permits cleartext HTTP globally and sends server tokens with
+Bearer authentication. When the configured endpoint uses HTTP, credentials
 and uploaded photo data can be observed or modified by other systems on the
-network. The password is also stored as an ordinary DataStore preference.
+network. Tokens are also stored as ordinary DataStore/SharedPreferences values.
 
 Follow-up work:
 
 - Require HTTPS by default and remove the global cleartext exception.
 - If local HTTP must remain available for development, scope it narrowly and
   show an explicit warning instead of enabling it for every host.
-- Prefer a revocable PhotoPrism app password or access token over an account
-  password where supported.
+- Rotate server access tokens when a device loses access.
 - Store secrets using an Android Keystore-backed design and exclude them from
   backups.
 - Ensure logs and error messages never include credentials or authorization

@@ -23,7 +23,7 @@ fun VideoViewerScreen(uri: String, name: String, onBack: () -> Unit) {
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer); video?.stopPlayback() }
     }
-    Scaffold(topBar = { TopAppBar(title = { Text(name) }, navigationIcon = {
+    Scaffold(topBar = { TopAppBar(title = { Text(name) }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }, navigationIcon = {
         TextButton(onClick = onBack) { Text("Back") }
     }) }) { padding ->
         if (failed) Text("Unable to play this video on this device", Modifier.padding(padding))

@@ -1,9 +1,10 @@
 # PhotoSync
 
 Browse your Android photo library and back up chosen photos to your own servers.
-**Albums** is browse-only; **PhotoPrism Backup** offers selective WhatsApp image uploads;
+**Albums** is browse-only; **PhotoPrism** delivers selected Camera photos, WhatsApp images, and WhatsApp videos;
 **Backup** archives Camera photos, WhatsApp images, and WhatsApp videos.
-Each backup workflow has independent settings, credentials and state.
+Each workflow has independent settings, credentials and state. Open Settings from the
+top-right button on any screen.
 
 ## Features
 
@@ -12,7 +13,7 @@ Each backup workflow has independent settings, credentials and state.
 
 Explore the phone's photo albums with cover images and counts. Open an album,
 then tap a photo to view it and pinch or double-tap to zoom. Albums is browse-only;
-use PhotoPrism Backup or Backup to upload. In larger albums, drag the right-edge
+use PhotoPrism or Backup to upload. In larger albums, drag the right-edge
 scrollbar to jump by month and year.
 
 <img src="docs/screenshots/albums.png" width="360" alt="Albums tab showing WhatsApp and Camera albums" />
@@ -31,20 +32,21 @@ under the [Unsplash License](https://unsplash.com/license).
 </details>
 
 <details>
-<summary><strong>Selectively back up WhatsApp images</strong></summary>
+<summary><strong>Send selected media to PhotoPrism</strong></summary>
 
-Tap photos to select them, then choose **Sync now**. Green checkmarks show upload
-history; selected photos have a separate highlight. Double-tap to view and zoom.
+Open **PhotoPrism**, then choose **Camera**, **WhatsApp images**, or **WhatsApp videos**.
+Tap items to select them, then choose **Sync now**. Green checkmarks show successful delivery
+history, even after PhotoPrism removes files from its import directory; selected photos have a separate highlight. Double-tap to view and zoom.
 Photos load progressively as you scroll. In larger libraries, drag the right-edge
 scrollbar to jump through photos by month and year.
 
-**Photo swipe** lets you review pictures individually: swipe right to queue an
+For WhatsApp images, **Photo swipe** lets you review pictures individually: swipe right to queue an
 upload, left to ignore without deleting, and undo your last ignore. Progress persists.
 On first review, existing photos dated before January 1, 2026 are skipped; older
 photos imported later still appear and the grid allows manual selection at any time.
 
 Queued photos are saved privately and retried when connected, roughly hourly subject
-to Android scheduling. **Settings → PhotoPrism Backup** shows pending uploads and retry
+to Android scheduling. **Settings → PhotoPrism** shows pending uploads and retry
 controls. Avoid clearing app storage while uploads are pending.
 
 <img src="docs/screenshots/whatsapp.png" width="360" alt="WhatsApp tab with older photos synced, two newer photos selected for upload, and the newest unselected" />
@@ -85,9 +87,9 @@ Camera includes images in `DCIM/Camera/` only. WhatsApp backups preserve subfold
 - Automatic upload is **off by default** for each collection. Backup reuses saved results until the
   configured interval expires; **Check now** always forces a comparison. Neither uploads.
 - Scheduled checks default to hourly; they upload only when automatic mode is enabled.
-- Camera uses a flat archive and can also deliver uploads to PhotoPrism import.
-  WhatsApp images and videos go to separate archives; selective PhotoPrism uploads
-  remain independent. Original media metadata permission keeps comparisons accurate.
+- Each collection writes only to its archive folder. Camera uses a flat archive.
+  Sending any of these files to PhotoPrism is a separate selection and upload.
+  Original media metadata permission keeps comparisons accurate.
 - Camera recognizes identical contents anywhere in its archive. WhatsApp requires
   matching contents at the same relative path. Same-name files
   with different contents require **Keep** or confirmed **Replace**; bulk/automatic
@@ -135,9 +137,11 @@ adb install -r apps/android/build/outputs/apk/debug/app-debug.apk
 Back up an existing installation before updating. Keep its signing key and app ID,
 and use `install -r` to preserve state.
 
-In the **Settings** tab, configure **PhotoPrism Backup** with a PhotoPrism/WebDAV upload URL
-and login. For **Backup**, [deploy the Camera service](services/camera/README.md#deployment)
-using the root `.env.example` and Compose file, then enter its HTTPS URL and token.
+[Deploy the service](services/camera/README.md#deployment) using the root `.env.example`
+and Compose file. Configure its four archive/import directories, then enter its HTTPS
+base URL and token in **Settings → Backup** and **Settings → PhotoPrism**. Each workflow
+keeps independent settings and status. PhotoPrism receives files through its import
+directory; no PhotoPrism login is needed in the app.
 
 ## Development
 

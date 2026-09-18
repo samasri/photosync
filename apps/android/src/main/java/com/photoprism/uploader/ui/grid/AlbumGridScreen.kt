@@ -34,6 +34,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,9 +74,25 @@ fun AlbumGridScreen(
     val uiState by viewModel.uiState.collectAsState()
     val syncProgress by viewModel.syncProgress.collectAsState()
 
-    LaunchedEffect(bucketId) {
-        viewModel.loadImagesIfNeeded(bucketId, albumName)
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val permissions = remember(bucketId, browseOnly) {
+        buildList {
+            add(if (android.os.Build.VERSION.SDK_INT >= 33) {
+                if (bucketId == "__whatsapp-videos") android.Manifest.permission.READ_MEDIA_VIDEO else android.Manifest.permission.READ_MEDIA_IMAGES
+            } else android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            if (!browseOnly) add(android.Manifest.permission.ACCESS_MEDIA_LOCATION)
+        }.toTypedArray()
     }
+    fun hasAccess() = com.photoprism.uploader.BuildConfig.BUILD_TYPE == "experiment" || permissions.all {
+        androidx.core.content.ContextCompat.checkSelfPermission(context, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+    var access by remember(bucketId) { mutableStateOf(hasAccess()) }
+    val requestAccess = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { access = hasAccess() }
+    LaunchedEffect(bucketId, access) {
+        if (access) viewModel.loadImagesIfNeeded(bucketId, albumName)
+    }
+
 
     if (uiState.showSyncDialog) {
         SyncProgressDialog(
@@ -92,25 +111,26 @@ fun AlbumGridScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(uiState.albumName.ifEmpty { albumName }) },
-                navigationIcon = {
-                    if (showBack) IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
+            Column {
+                TopAppBar(
+                    title = { Text(uiState.albumName.ifEmpty { albumName }, maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    navigationIcon = {
+                        if (showBack) IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = { com.photoprism.uploader.ui.components.SettingsAction() }
+                )
+                if (!browseOnly) Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.End) {
                     onReview?.let { review -> TextButton(onClick = review) { Text("Photo swipe") } }
-                    if (!browseOnly && uiState.images.isNotEmpty()) {
-                        TextButton(onClick = { viewModel.selectAll() }) {
-                            Text("Select All")
-                        }
-                        TextButton(onClick = { viewModel.clearSelection() }) {
-                            Text("Clear")
-                        }
+                    if (uiState.images.isNotEmpty()) {
+                        TextButton(onClick = { viewModel.selectAll() }) { Text("Select All") }
+                        TextButton(onClick = { viewModel.clearSelection() }) { Text("Clear") }
                     }
                 }
-            )
+            }
         },
         bottomBar = {
             if (!browseOnly && uiState.selectedImages.isNotEmpty()) {
@@ -150,6 +170,10 @@ fun AlbumGridScreen(
                 .padding(padding)
         ) {
             when {
+                !access -> Column(Modifier.align(Alignment.Center).padding(16.dp)) {
+                    Text("Allow access to media and original metadata to load this collection.")
+                    Button(onClick = { requestAccess.launch(permissions) }) { Text("Grant access") }
+                }
                 uiState.isLoading -> {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -182,9 +206,9 @@ fun AlbumGridScreen(
 
                 else -> {
                     Column {
-                        // Info about naming strategy
+                        // History reflects delivery, even after the importer consumes a file.
                         if (!browseOnly) Text(
-                            text = "Files are uploaded as: name-id.ext (e.g., IMG_001-12345.jpg)",
+                            text = "Green checks show successful PhotoPrism deliveries.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -262,6 +286,7 @@ private fun ImageTile(
     Box(
         modifier = Modifier
             .aspectRatio(1f)
+            .testTag("media:${image.uploadKey}")
             .padding(1.dp)
             .combinedClickable(
                 onClick = onClick,
@@ -269,12 +294,9 @@ private fun ImageTile(
                 onLongClick = onLongClick
             )
     ) {
-        AsyncImage(
-            model = image.contentUri,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
-        )
+        com.photoprism.uploader.camera.BackupThumbnail(
+            com.photoprism.uploader.camera.CameraPhoto(image.contentUri, image.displayName, image.size,
+                image.uploadKey, video = image.video), Modifier.fillMaxSize())
 
         if (isSelected) {
             Box(

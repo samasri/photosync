@@ -18,8 +18,8 @@ class WebDavUploader(private val contentResolver: ContentResolver) {
     private val client = OkHttpClient.Builder()
         .followRedirects(com.photoprism.uploader.BuildConfig.BUILD_TYPE != "experiment")
         .followSslRedirects(com.photoprism.uploader.BuildConfig.BUILD_TYPE != "experiment")
-        .connectTimeout(15, TimeUnit.SECONDS).writeTimeout(2, TimeUnit.MINUTES)
-        .readTimeout(30, TimeUnit.SECONDS).callTimeout(3, TimeUnit.MINUTES).build()
+        .connectTimeout(15, TimeUnit.SECONDS).writeTimeout(10, TimeUnit.MINUTES)
+        .readTimeout(10, TimeUnit.MINUTES).callTimeout(60, TimeUnit.MINUTES).build()
 
     suspend fun uploadFile(contentUri: Uri, remoteUrl: String, settings: ServerSettings): UploadResult =
         withContext(Dispatchers.IO) {
@@ -28,7 +28,16 @@ class WebDavUploader(private val contentResolver: ContentResolver) {
                     val url = remoteUrl.toHttpUrlOrNull()
                     require(url?.host == "127.0.0.1" || url?.host == "localhost") { "Lab uploads must use localhost" }
                 }
+                val file = java.io.File(requireNotNull(contentUri.path))
+                require(contentUri.scheme == "file") { "Upload requires a saved queue file" }
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(1024 * 1024)
+                    while (true) { val count = input.read(buffer); if (count < 0) break; digest.update(buffer, 0, count) }
+                }
+                val hash = digest.digest().joinToString("") { "%02x".format(it) }
                 val requestBody = object : RequestBody() {
+                    override fun contentLength() = file.length()
                     override fun contentType() =
                         (contentResolver.getType(contentUri) ?: "application/octet-stream").toMediaTypeOrNull()
                     override fun writeTo(sink: BufferedSink) {
@@ -38,13 +47,12 @@ class WebDavUploader(private val contentResolver: ContentResolver) {
                     }
                 }
                 val builder = Request.Builder().url(remoteUrl).put(requestBody)
-                if (settings.username.isNotBlank()) {
-                    builder.header("Authorization", Credentials.basic(settings.username, settings.password))
-                }
+                builder.header("Authorization", "Bearer ${settings.password}")
+                builder.header("X-Content-SHA256", hash)
                 client.newCall(builder.build()).execute().use { response ->
                     if (response.isSuccessful) UploadResult.Success
                     else UploadResult.Failure(when (response.code) {
-                        401, 403 -> "HTTP ${response.code}: Check your PhotoPrism credentials and WebDAV access in Settings."
+                        401, 403 -> "HTTP ${response.code}: Check your delivery server token in Settings."
                         else -> "HTTP ${response.code}: Upload was not accepted by the server."
                     }, response.code in listOf(401, 403, 408, 429) || response.code >= 500)
                 }

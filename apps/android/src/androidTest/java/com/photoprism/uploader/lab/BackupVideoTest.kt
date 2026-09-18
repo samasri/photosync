@@ -37,5 +37,18 @@ class BackupVideoTest {
         compose.onNodeWithText("Unable to play this video on this device").assertDoesNotExist()
         compose.onNodeWithText("Back").performClick()
         compose.onNodeWithText("Check now").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("PhotoPrism").performClick()
+        compose.onNodeWithText("WhatsApp videos").performClick()
+        compose.waitUntil(15000) { compose.onAllNodesWithContentDescription("Play playback.mp4").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Play playback.mp4").performTouchInput { doubleClick() }
+        compose.waitUntil(15000) {
+            var playing = false
+            compose.runOnUiThread { playing = player(compose.activity.window.decorView)?.isPlaying == true }
+            playing
+        }
+        compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
+        compose.onNodeWithText("Back").performClick()
+        compose.onNodeWithText("Select All").assertIsDisplayed()
     }
 }

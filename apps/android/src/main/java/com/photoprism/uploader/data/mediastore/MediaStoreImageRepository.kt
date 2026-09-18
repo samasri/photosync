@@ -17,8 +17,10 @@ class MediaStoreImageRepository(private val contentResolver: ContentResolver, pr
      */
     suspend fun loadImagesForAlbum(bucketId: String): List<MediaImage> = withContext(Dispatchers.IO) {
         if (com.photoprism.uploader.BuildConfig.BUILD_TYPE == "experiment") {
-            return@withContext requireNotNull(synthetic) { "Lab requires synthetic data" }.images(if (bucketId == "__whatsapp") "whatsapp" else bucketId)
+            return@withContext requireNotNull(synthetic) { "Lab requires synthetic data" }.images(when (bucketId) { "__whatsapp" -> "whatsapp"; "__camera" -> "camera"; "__whatsapp-videos" -> "whatsapp-videos"; else -> bucketId })
         }
+        val video = bucketId == "__whatsapp-videos"
+        val uri = if (video) MediaStore.Video.Media.EXTERNAL_CONTENT_URI else MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         val images = mutableListOf<MediaImage>()
 
         val projection = arrayOf(
@@ -29,14 +31,19 @@ class MediaStoreImageRepository(private val contentResolver: ContentResolver, pr
             MediaStore.Images.Media.DATE_ADDED
         )
 
-        val selection = if (bucketId == "__whatsapp")
-            "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} = ? COLLATE NOCASE"
-        else "${MediaStore.Images.Media.BUCKET_ID} = ?"
-        val selectionArgs = arrayOf(if (bucketId == "__whatsapp") "WhatsApp Images" else bucketId)
+        val folder = when (bucketId) {
+            "__camera" -> "DCIM/Camera/"
+            "__whatsapp" -> "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Images/"
+            "__whatsapp-videos" -> "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Video/"
+            else -> null
+        }
+        val selection = if (folder != null) "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?"
+            else "${MediaStore.Images.Media.BUCKET_ID} = ?"
+        val selectionArgs = arrayOf(folder?.let { if (bucketId == "__camera") it else "$it%" } ?: bucketId)
         val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
 
         contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            uri,
             projection,
             selection,
             selectionArgs,
@@ -56,7 +63,7 @@ class MediaStoreImageRepository(private val contentResolver: ContentResolver, pr
                 val dateAdded = cursor.getLong(dateColumn)
 
                 val contentUri = ContentUris.withAppendedId(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    uri,
                     id
                 )
 
@@ -67,7 +74,7 @@ class MediaStoreImageRepository(private val contentResolver: ContentResolver, pr
                         displayName = name,
                         size = size,
                         bucketId = bucket,
-                        dateAdded = dateAdded
+                        dateAdded = dateAdded, video = video
                     )
                 )
             }

@@ -53,7 +53,7 @@ def main():
                    '-e', 'WHATSAPP_VIDEOS_MOUNT_ROOT=/whatsapp-videos',
                    '-e', 'WHATSAPP_VIDEOS_INDEX_PATH=/state/whatsapp-videos.sqlite3',
                    '-e', 'CAMERA_STORAGE_ROOT=/photos', '-e', 'CAMERA_MOUNT_ROOT=/photos',
-                   '-e', 'CAMERA_INDEX_PATH=/state/inventory.sqlite3', '-e', 'CAMERA_COPY_PATHS=["/imports"]',
+                   '-e', 'CAMERA_INDEX_PATH=/state/inventory.sqlite3', '-e', 'PHOTOPRISM_IMPORT_ROOT=/imports', '-e', 'PHOTOPRISM_RECEIPTS_PATH=/state/import.sqlite3',
                    '-e', 'CAMERA_HOST=0.0.0.0', '-e', 'CAMERA_TOKEN=synthetic-e2e-token', 'photosync-camera')
             started = True
             def request(method, path, body=None, headers=None):
@@ -102,39 +102,36 @@ def main():
             first, second = png((20, 80, 140)), png((140, 80, 20))
             assert status('synthetic.png', first) == 'missing'
             assert put('synthetic.png', first) == 201
-            for folder in (archive, imports):
-                assert (folder / 'synthetic.png').read_bytes() == first
-            assert (imports / 'synthetic.png').stat().st_mode & 0o777 == 0o644
+            assert (archive / 'synthetic.png').read_bytes() == first
+            assert not (imports / 'synthetic.png').exists()
             assert status('synthetic.png', first) == 'synced'
             assert put('synthetic.png', second) == 409
             assert put('synthetic.png', second, first) == 201
-            for folder in (archive, imports):
-                assert (folder / 'synthetic.png').read_bytes() == second
-            (imports / 'synthetic.png').unlink()  # Simulate an import consumer.
+            assert (archive / 'synthetic.png').read_bytes() == second
+            def deliver(filename, data):
+                return request('PUT', '/v1/import/' + filename, data,
+                    {'X-Content-SHA256': hashlib.sha256(data).hexdigest()})[0]
+            assert deliver('delivery.png', first) == 201
+            assert (imports / 'delivery.png').read_bytes() == first
+            assert not (archive / 'delivery.png').exists()
+            assert (imports / 'delivery.png').stat().st_mode & 0o777 == 0o644
+            assert deliver('delivery.png', second) == 409
+            (imports / 'delivery.png').unlink()
             docker('restart', name)
             ready()
-            assert put('synthetic.png', second) == 201
-            assert not (imports / 'synthetic.png').exists()
-            (imports / 'retry.png').write_bytes(first)
-            assert put('retry.png', second) == 503  # Preserve conflicting destination.
-            assert status('retry.png', second) == 'missing'
-            assert (imports / 'retry.png').read_bytes() == first
-            (imports / 'retry.png').unlink()
-            docker('restart', name)
-            ready()
-            assert status('retry.png', second) == 'missing'
-            assert put('retry.png', second) == 201
-            assert status('retry.png', second) == 'synced'
+            assert deliver('delivery.png', first) == 201
+            assert not (imports / 'delivery.png').exists()
+            assert deliver('delivery.png', second) == 201
+            assert (imports / 'delivery.png').read_bytes() == second
+            assert deliver('synthetic.mp4', b'synthetic video') == 201
             for folder in (archive, imports):
-                assert (folder / 'retry.png').read_bytes() == second
                 assert not list(folder.glob('.incoming-*'))
             logs = docker('logs', name)
-            assert 'copy_delivery_failed' in logs
-            assert 'copies_completed' in logs
-            for private in ('synthetic-e2e-token', 'synthetic.png', 'retry.png', str(root)):
+            assert 'photoprism' in logs and 'backup' in logs
+            for private in ('synthetic-e2e-token', 'synthetic.png', 'delivery.png', str(root)):
                 assert private not in logs
-            print('PASS: container HTTP upload → two synthetic destinations; byte equality, replacement,')
-            print('consumed imports, persistent partial failure, retry, temporary cleanup and safe logs.')
+            print('PASS: independent archive/import workflows, nested collections, conditional replacement,')
+            print('video delivery, consumed imports, persistent retry receipts, cleanup and safe logs.')
         finally:
             if started:
                 docker('rm', '-f', name)

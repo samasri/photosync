@@ -47,7 +47,7 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
         }
     }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("PhotoPrism Backup") }, navigationIcon = {
+        TopAppBar(title = { Text("PhotoPrism") }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }, navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
         })
     }, snackbarHost = { SnackbarHost(snackbar) }) { padding ->
@@ -55,20 +55,18 @@ fun SettingsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("WhatsApp · PhotoPrism server", style = MaterialTheme.typography.titleMedium)
+                    Text("PhotoPrism delivery server", style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(value = uiState.baseUrl, onValueChange = viewModel::updateBaseUrl,
-                        label = { Text("Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Server URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
-                    OutlinedTextField(value = uiState.username, onValueChange = viewModel::updateUsername,
-                        label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = uiState.password, onValueChange = viewModel::updatePassword,
-                        label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Token") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         trailingIcon = {
                             IconButton(onClick = { showPassword = !showPassword }) {
                                 Icon(if (showPassword) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    if (showPassword) "Hide password" else "Show password")
+                                    if (showPassword) "Hide token" else "Show token")
                             }
                         })
                     Button(onClick = { showPassword = false; viewModel.saveSettings() }, modifier = Modifier.fillMaxWidth()) {

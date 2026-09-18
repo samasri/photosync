@@ -32,9 +32,13 @@ fun AppNavigation(appModule: AppModule) {
     fun view(uri: String, name: String) {
         nav.navigate("image_viewer/${Uri.encode(uri)}/${Uri.encode(name)}")
     }
+    CompositionLocalProvider(com.photoprism.uploader.ui.components.LocalOpenSettings provides {
+        if (route?.endsWith("-settings") == true) nav.popBackStack("settings", false)
+        else if (route != "settings") nav.navigate("settings") { launchSingleTop = true }
+    }) {
     Scaffold(bottomBar = {
-        if (route in listOf("albums", "whatsapp", "camera", "settings")) NavigationBar {
-            listOf(Triple("albums", "Albums", Icons.Default.PhotoLibrary), Triple("whatsapp", "PhotoPrism Backup", Icons.Default.Chat), Triple("camera", "Backup", Icons.Default.CameraAlt), Triple("settings", "Settings", Icons.Default.Settings)).forEach { (destination, label, icon) ->
+        if (route in listOf("albums", "whatsapp", "camera")) NavigationBar {
+            listOf(Triple("albums", "Albums", Icons.Default.PhotoLibrary), Triple("whatsapp", "PhotoPrism", Icons.Default.Chat), Triple("camera", "Backup", Icons.Default.CameraAlt)).forEach { (destination, label, icon) ->
                 NavigationBarItem(selected = route == destination, onClick = {
                     nav.navigate(destination) { popUpTo("albums") { saveState = true }; launchSingleTop = true; restoreState = true }
                 }, icon = { Icon(icon, null) }, label = { Text(label) })
@@ -51,14 +55,31 @@ fun AppNavigation(appModule: AppModule) {
                 }
             }
             composable("whatsapp") {
+                Scaffold(topBar = { TopAppBar(title = { Text("PhotoPrism") }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }) }) { inner ->
+                    Column(Modifier.padding(inner).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        BackupCollection.entries.forEach { collection ->
+                            OutlinedButton(onClick = { nav.navigate("photoprism/${collection.id}") }, modifier = Modifier.fillMaxWidth()) { Text(collection.title) }
+                        }
+                    }
+                }
+            }
+            composable("photoprism/{collection}") { back ->
+                val collection = BackupCollection.entries.first { it.id == back.arguments?.getString("collection") }
+                val bucket = when (collection) {
+                    BackupCollection.CAMERA -> "__camera"
+                    BackupCollection.WHATSAPP_IMAGES -> "__whatsapp"
+                    BackupCollection.WHATSAPP_VIDEOS -> "__whatsapp-videos"
+                }
                 val model: AlbumGridViewModel = viewModel(factory = AlbumGridViewModel.Factory(appModule.imageRepository,
                     appModule.syncOrchestrator, appModule.settingsDataStore, appModule.uploadedItemsDao))
-                AlbumGridScreen("__whatsapp", "WhatsApp Images", model, onBack = {},
-                    onImageClick = { view(it.contentUri.toString(), it.displayName) },
-                    onReview = { nav.navigate("review") }, showBack = false)
+                AlbumGridScreen(bucket, collection.title, model, onBack = { nav.popBackStack() },
+                    onImageClick = {
+                        if (it.video) nav.navigate("video_viewer/${Uri.encode(it.contentUri.toString())}/${Uri.encode(it.displayName)}")
+                        else view(it.contentUri.toString(), it.displayName)
+                    }, onReview = if (collection == BackupCollection.WHATSAPP_IMAGES) ({ nav.navigate("review") }) else null)
             }
             composable("camera") {
-                Scaffold(topBar = { TopAppBar(title = { Text("Backup") }) }) { inner ->
+                Scaffold(topBar = { TopAppBar(title = { Text("Backup") }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }) }) { inner ->
                     Column(Modifier.padding(inner).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         BackupCollection.entries.forEach { collection ->
                             OutlinedButton(onClick = { nav.navigate("backup/${collection.id}") }, modifier = Modifier.fillMaxWidth()) { Text(collection.title) }
@@ -96,9 +117,9 @@ fun AppNavigation(appModule: AppModule) {
                 com.photoprism.uploader.ui.review.ReviewScreen(model, onBack = { nav.popBackStack() })
             }
             composable("settings") {
-                Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { inner ->
+                Scaffold(topBar = { TopAppBar(title = { Text("Settings") }, navigationIcon = { TextButton(onClick = { nav.popBackStack() }) { Text("Back") } }, actions = { com.photoprism.uploader.ui.components.SettingsAction() }) }) { inner ->
                     Column(Modifier.padding(inner).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        OutlinedButton(onClick = { nav.navigate("whatsapp-settings") }, modifier = Modifier.fillMaxWidth().testTag("photoprism-settings")) { Text("PhotoPrism Backup") }
+                        OutlinedButton(onClick = { nav.navigate("whatsapp-settings") }, modifier = Modifier.fillMaxWidth().testTag("photoprism-settings")) { Text("PhotoPrism") }
                         OutlinedButton(onClick = { nav.navigate("camera-settings") }, modifier = Modifier.fillMaxWidth().testTag("backup-settings")) { Text("Backup") }
                     }
                 }
@@ -109,6 +130,7 @@ fun AppNavigation(appModule: AppModule) {
             }
             composable("camera-settings") { CameraSettingsScreen(appModule.cameraBackup, appModule.backups.values.toList(), onBack = { nav.popBackStack() }) }
         }
+    }
     }
 }
 
